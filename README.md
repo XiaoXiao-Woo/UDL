@@ -11,8 +11,8 @@ codes, results and models are available in UDL, please contact [@Liang-Jian Deng
 * PNN (RS'2016)
 * PanNet (CVPR'2017)
 * DiCNN1 (JSTAR'2019)
-* FusionNet(TGRS'2020)
-* DCFNet(ICCV' 2021)
+* FusionNet (TGRS'2020)
+* DCFNet (ICCV'2021)
 
 </details>
 
