@@ -125,6 +125,6 @@ If you use this toolbox or benchmark in your research, please cite this project.
 - [MMCV](https://github.com/open-mmlab/mmcv): OpenMMLab foundational library for computer vision.
 - [HRNet ](https://github.com/HRNet/HRNet-Semantic-Segmentation): High-resolution networks and Segmentation Transformer for Semantic Segmentation
 
-## License
+## License & Copyright
 
 This project is open sourced under GNU General Public License v3.0
