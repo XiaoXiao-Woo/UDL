@@ -24,7 +24,7 @@ codes, results and models are available in UDL, please contact [@Liang-Jian Deng
 ### Quantitative results
 
 
-|      wv3       | SAM  $\downarrow$ | ERGAS $\downarrow$ |
+|      wv3       |        SAM        |        ERGAS       |
 | :------------: | :---------------: | :----------------: |
 |   new_data10   |       3.934       |       2.531        |
 |   new_data11   |       4.133       |       2.630        |
@@ -33,12 +33,12 @@ codes, results and models are available in UDL, please contact [@Liang-Jian Deng
 |   new_data7    |       3.866       |       2.820        |
 |   new_data8    |       3.257       |       2.210        |
 |   new_data9    |       4.154       |       2.718        |
-|    Avg(std)    | 3.727($\pm0.571$) | 2.440($\pm0.474$)  |
+|    Avg(std)    | 3.727(0.571) | 2.440(0.474)  |
 |  Ideal Value   |         0         |         0          |
 
-|  wv3_1258   | SAM  $\downarrow$  | ERGAS $\downarrow$ |
+|  wv3_1258   |        SAM         |      ERGAS         |
 | :---------: | :----------------: | :----------------: |
-|  Avg(std)   | 3.377($\pm 1.200$) | 2.257($\pm 0.910$) |
+|  Avg(std)   |    3.377(1.200)    |    2.257(0.910)    |
 | Ideal Value |         0          |         0          |
 
 ### Visual results
@@ -92,11 +92,11 @@ The directory tree should be look like this:
 
 ```args.eval = True, args.dataset='wv3_singleMat'```
 
-## Plans
+## Plannings
 
 Please expect more tasks and models
 
-- [ ] pansharpening
+- [x] pansharpening
   - [ ] models
 
 - [ ] derain
