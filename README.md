@@ -1,5 +1,5 @@
 # UDL
-UDL is a practicable framework used in Deep Learning (computer vision && CG).
+UDL is a practicable framework used in Deep Learning (computer vision).
 ## Benchmark
 
 codes, results and models are available in UDL, please contact [@Liang-Jian Deng](https://liangjiandeng.github.io/) (corresponding author)
