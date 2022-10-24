@@ -63,7 +63,7 @@ open UDL/panshaprening/tests, run the following code:
 python run_DCFNet.py
 ```
 
-Note that default configures don't fit other environments, you can modify configures in **pansharpening/models/DCFNet/option_DCFNet.py**.
+Note that default configurions don't fit other environments, you can modify configures in **pansharpening/models/DCFNet/option_DCFNet.py**.
 
 Benefit from mmcv/config.py, the project has the global configures in Basis/option.py, option_DCFNet  inherits directly from Basis/option.py.
 
