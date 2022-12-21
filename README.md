@@ -100,11 +100,11 @@ The directory tree should be look like this:
 
 Please expect more tasks and models
 
-- [x] pansharpening
-  - [ ] models
+- [x] [pansharpening](https://github.com/XiaoXiao-Woo/PanCollection)
+  - [x] models
 
-- [ ] derain
-  - [ ] models
+- [x] [derain](https://github.com/XiaoXiao-Woo/derain)
+  - [x] models
 
 - [ ] HISR
   - [ ] models
