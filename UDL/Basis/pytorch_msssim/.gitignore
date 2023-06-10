@@ -1,9 +1,0 @@
-__pycache__
-.vscode
-kodim10.png
-result.png
-*.pt
-data
-build
-dist
-pytorch_msssim.egg-info

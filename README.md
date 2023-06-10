@@ -1,121 +1,138 @@
 # UDL
-UDL is a practicable framework used in Deep Learning (computer vision).
-# Dynamic Cross Feature Fusion for Remote Sensing Pansharpening ([ICCV 2021](https://liangjiandeng.github.io/papers/2021/dfcnet2021.pdf))
-[Xiao Wu](https://xiaoxiao-woo.github.io/), [Ting-Zhu Huang*](https://scholar.google.com/citations?user=H7El-ZkAAAAJ&hl=zh-CN), [Liang-Jian Deng*](https://liangjiandeng.github.io/), [Tian-Jing Zhang](https://github.com/tianjingzhang)
-## Benchmark
+
+UDL is a unified pytorch framework for vision research:
+
+* UDL has faster library loading speed and more convenient reflection mechanism to call different models and methods.
+* UDL is based on MMCV which provides the following functionalities.
+* UDL is based on NNI to peform automatic machine learning.
 
 
 
-codes, results and models are available in UDL, please contact [@Liang-Jian Deng](https://liangjiandeng.github.io/) (corresponding author)
 
-<details open>
-<summary>Pansharpening model zoo:
-</summary>
+[English](https://github.com/XiaoXiao-Woo/UDL/edit/dev/README.md) | [简体中文](https://github.com/XiaoXiao-Woo/UDL/edit/dev/README_zh.md)
 
-* PNN (RS'2016)
-* PanNet (CVPR'2017)
-* DiCNN1 (JSTAR'2019)
-* FusionNet (TGRS'2020)
-* DCFNet (ICCV'2021)
-
-</details>
+See the [repo](https://github.com/liangjiandeng/PanCollection) for more detailed descriptions. 
+## Features
 
 
+## Requirements
+* Python3.7+, Pytorch>=1.6.0
+* NVIDIA GPU + CUDA
+* Run `python setup.py develop`
 
-## Results of DCFNet 
+Note: Our project is based on MMCV, but you needn't to install it currently.
 
+## Quick Start
+**Step0.** We use UDL in PanCollection, first please set your Python environment.
 
-### Quantitative results
+>git clone https://github.com/XiaoXiao-Woo/UDL
+> 
+> git clone https://github.com/XiaoXiao-Woo/PanCollection
 
+Then, 
 
-|      wv3       |        SAM        |        ERGAS       |
-| :------------: | :---------------: | :----------------: |
-|   new_data10   |       3.934       |       2.531        |
-|   new_data11   |       4.133       |       2.630        |
-| new_data12_512 |       4.108       |       2.712        |
-|   new_data6    |       2.638       |       1.461        |
-|   new_data7    |       3.866       |       2.820        |
-|   new_data8    |       3.257       |       2.210        |
-|   new_data9    |       4.154       |       2.718        |
-|    Avg(std)    | 3.727(0.571) | 2.440(0.474)  |
-|  Ideal Value   |         0         |         0          |
+> python setup.py develop
 
-|  wv3_1258   |        SAM         |      ERGAS         |
-| :---------: | :----------------: | :----------------: |
-|  Avg(std)   |    3.377(1.200)    |    2.257(0.910)    |
-| Ideal Value |         0          |         0          |
+or
 
-### Visual results
+> pip install -i udl-vis https://pypi.org/simple
 
-please see the paper and the sub-directory: **./UDL/results/DCFNet**
+**Step1.**
+* Download datasets (WorldView-3, QuickBird, GaoFen2, WorldView2) from the [homepage](https://liangjiandeng.github.io/PanCollection.html). Put it with the following format. 
 
-
-
-## Install [Option]
-
-please run ```python setup.py develop```
-
-## Usage
-
-open UDL/panshaprening/tests, run the following code:
+* Verify the dataset path in `PanCollection/UDL/Basis/option.py`, or you can print the output of `run_pansharpening.py`, then set __cfg.data_dir__ to your dataset path.
 
 ```
-python run_DCFNet.py
-```
-
-Note that default configurions don't fit other environments, you can modify configures in **pansharpening/models/DCFNet/option_DCFNet.py**.
-
-Benefit from mmcv/config.py, the project has the global configures in Basis/option.py, option_DCFNet  inherits directly from Basis/option.py.
-
-### 1. Data preparation
-
-You need to download WorldView-3 datasets.
-
-The directory tree should be look like this:
-
-```
-|-$ROOT/datasets
+|-$ROOT/Datasets
 ├── pansharpening
 │   ├── training_data
-│   │   ├── train_wv3_10000.h5
-│   │   ├── valid_wv3_10000.h5
-│   ├── test_data
-│   │   ├── WV3_Simu
-│   │   │   ├── new_data6.mat
-│   │   │   ├── new_data7.mat
+│   │   ├── train_wv3.h5
+│   │   ├── ...
+│   ├── validation_data
+│   │   │   ├── valid_wv3.h5
 │   │   │   ├── ...
-│   │   ├── WV3_Simu_mulExm
-│   │   │   ├── test1_mulExm1258.mat
+│   ├── test_data
+│   │   ├── WV3
+│   │   │   ├── test_wv3_multiExm.h5
+│   │   │   ├── ...
 ```
 
-### 2. Training
+**Step2.** Open `PanCollection/UDL/pansharpening`,  run the following code:
 
-```args.eval = False, args.dataset='wv3'```
+> python run_pansharpening.py
 
-### 3. Inference
+**step3.** How to train/validate the code.
 
-```args.eval = True, args.dataset='wv3_singleMat'```
+* A training example：
 
-## Plannings
+	run_pansharpening.py
+  
+	where arch='BDPN', and configs/option_bdpn.py has: 
+  
+	__cfg.eval__ = False, 
+  
+	__cfg.workflow__ = [('train', 50), ('val', 1)], __cfg.dataset__ = {'train': 'wv3', 'val': 'wv3_multiExm.h5'}
+	
+* A test example:
 
-Please expect more tasks and models
+	run_test_pansharpening.py
+  
+	__cfg.eval__ = True or __cfg.workflow__ = [('val', 1)]
 
-- [x] [pansharpening](https://github.com/XiaoXiao-Woo/PanCollection)
-  - [x] models
+**Step4**. How to customize the code.
 
-- [x] [derain](https://github.com/XiaoXiao-Woo/derain)
-  - [x] models
+One model is divided into three parts:
 
-- [ ] HISR
-  - [ ] models
+1. Record hyperparameter configurations in folder of `PanCollection/UDL/pansharpening/configs/option_<modelName>.py`. For example, you can load pretrained model by setting __model_path__ = "your_model_path" or __cfg.resume_from__ = "your_model_path".
+
+2. Set model, loss, optimizer, scheduler in folder of `PanCollection/UDL/pansharpening/models/<modelName>_main.py`.
+
+3. Write a new model in folder of `PanCollection/UDL/pansharpening/models/<modelName>/model_<modelName>.py`.
+
+Note that when you add a new model into PanCollection, you need to update `PanCollection/UDL/pansharpening/models/__init__.py` and add option_<modelName>.py.
+
+**Others**
+* if you want to add customized datasets, you need to update:
+
+```
+PanCollection/UDL/AutoDL/__init__.py.
+PanCollection/UDL/pansharpening/common/psdata.py.
+```
+
+* if you want to add customized tasks, you need to update:
+
+```
+1.Put model_<newModelName> and <newModelName>_main in PanCollection/UDL/<taskName>/models.
+2.Create a new folder of PanCollection/UDL/<taskName>/configs to put option_<newModelName>.
+3.Update PanCollection/UDL/AutoDL/__init__.
+4.Add a class in PanCollection/UDL/Basis/python_sub_class.py, like this:
+class PanSharpeningModel(ModelDispatcher, name='pansharpening'):
+```
+
+* if you want to add customized training settings, such as saving model, recording logs, and so on. you need to update:
+
+```
+PanCollection/UDL/mmcv/mmcv/runner/hooks
+```
+
+Note that: Don't put model/dataset/task-related files into the folder of AutoDL.
+
+* if you want to know more details of runner about how to train/test in `PanCollection/UDL/AutoDL/trainer.py`, please see PanCollection/UDL/mmcv/mmcv/runner/epoch_based_runner.py
 
 ## Contribution
-We appreciate all contributions to improve UDL. Looking forward to your contribution to UDL.
+We appreciate all contributions to improving PanCollection. Looking forward to your contribution to PanCollection.
+
 
 ## Citation
-
-If you use this toolbox or benchmark in your research, please cite this project.
+Please cite this project if you use datasets or the toolbox in your research.
 ```
+@misc{PanCollection,
+    author = {Xiao Wu, Liang-Jian Deng and Ran Ran},
+    title = {"PanCollection" for Remote Sensing Pansharpening},
+    url = {https://github.com/XiaoXiao-Woo/PanCollection/},
+    year = {2022},
+}
+
 @InProceedings{Wu_2021_ICCV,
     author    = {Wu, Xiao and Huang, Ting-Zhu and Deng, Liang-Jian and Zhang, Tian-Jing},
     title     = {Dynamic Cross Feature Fusion for Remote Sensing Pansharpening},
@@ -125,10 +142,10 @@ If you use this toolbox or benchmark in your research, please cite this project.
     pages     = {14687-14696}
 }
 ```
+
 ## Acknowledgement
 - [MMCV](https://github.com/open-mmlab/mmcv): OpenMMLab foundational library for computer vision.
-- [HRNet ](https://github.com/HRNet/HRNet-Semantic-Segmentation): High-resolution networks and Segmentation Transformer for Semantic Segmentation
 
 ## License & Copyright
+This project is open sourced under GNU General Public License v3.0.
 
-This project is open sourced under GNU General Public License v3.0
