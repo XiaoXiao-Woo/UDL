@@ -208,7 +208,7 @@ class EpochBasedRunner(BaseRunner):
 
         assert self._max_epochs is not None, (
             'max_epochs must be specified during instantiation')
-        self.eval_flag = any('train' in mode for mode, _ in workflow)
+        self.eval_flag = train_flag = any('train' in mode for mode, _ in workflow)
         self.data_loaders = data_loaders
         self.data_length = {}
         for i, flow in enumerate(workflow):
@@ -234,7 +234,7 @@ class EpochBasedRunner(BaseRunner):
         self.call_hook('before_run')
         tic = time.time()
         # from 1 to self._max_epochs, not from 0
-        while self.epoch < self._max_epochs or not self.eval_flag:
+        while (self.epoch < self._max_epochs and train_flag) or not self.eval_flag:
             for i, flow in enumerate(workflow):
                 mode, epochs = flow
 

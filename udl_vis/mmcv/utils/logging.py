@@ -143,10 +143,13 @@ log_colors_config = {
 #     return get_logger('mmcls', log_file, log_level)
 def get_root_logger(name=None, cfg=None, cfg_name=None, log_level=logging.INFO):
     return get_logger(name, cfg, cfg_name, log_level)
+
+
 # TODO: Depre
 # the same as "get_root_logger"
 def create_logger(cfg=None, cfg_name=None, dist_print=0, log_level=logging.INFO):
     return get_logger(None, cfg, cfg_name, log_level)
+
 
 @functools.lru_cache()  # so that calling setup_logger multiple times won't add many handlers
 def setup_logger(name, final_log_file, color=True):
@@ -212,7 +215,8 @@ def setup_logger(name, final_log_file, color=True):
     return logger
 
 
-def get_logger(name=None, cfg=None, cfg_name=None, phase='train', log_level=logging.INFO, file_mode='w'):  # log_file=None,
+def get_logger(name=None, cfg=None, cfg_name=None, log_level=logging.INFO, # phase='train',
+               file_mode='w'):  # log_file=None,
     """Initialize and get a logger by name.
 
     If the logger has not been initialized, this method will initialize the
@@ -235,7 +239,7 @@ def get_logger(name=None, cfg=None, cfg_name=None, phase='train', log_level=logg
         logging.Logger: The expected logger.
     """
     if name in logger_initialized:
-        if cfg is None: # cfg.use_log
+        if cfg is None:  # cfg.use_log
             return logging.getLogger(name)
         # else:
         #     return None
@@ -260,36 +264,46 @@ def get_logger(name=None, cfg=None, cfg_name=None, phase='train', log_level=logg
 
     dataset = cfg.dataset
     assert isinstance(dataset, dict), print(f"{dataset}'s type is {type(dataset)}, not a dict. ")
-    if cfg.eval:
-        dataset = dataset.get("test")
-    else:
-        dataset = dataset.get('train') if dataset.get('train', None) is not None else dataset.get('val')
-    model = cfg.arch
-    cfg_name = os.path.basename(cfg_name).split('.')[0]
-    time_str = time.strftime('%Y-%m-%d-%H-%M-%S')
 
-    # store all output except tb_log file
-    final_output_dir = root_output_dir / dataset / model / cfg_name
-    if cfg.eval:
-        model_save_tmp = os.path.dirname(cfg.resume_from).split('/')[-1]
-    else:
-        model_save_tmp = "model_{}".format(time_str)
-
-    model_save_dir = final_output_dir / model_save_tmp
     # if not dist_print:
 
-
     if cfg.use_log_and_save:
-        print_log('=> creating {}'.format(final_output_dir))
-        final_output_dir.mkdir(parents=True, exist_ok=True)
-        model_save_dir.mkdir(parents=True, exist_ok=True)
 
-        cfg_name = '{}_{}'.format(cfg_name, time_str)
-        # a logger to save results
-        log_file = '{}_{}.log'.format(cfg_name, phase)
-        if cfg.eval:
-            final_log_file = model_save_dir / log_file
+        if os.path.exists(cfg.resume_from) and (dataset.get('train', None) is None or cfg.eval):
+            model_save_dir = os.path.dirname(cfg.resume_from.replace('\\', '/'))
+            log_file = '{}_{}.log'.format(cfg_name, model_save_dir.split('/')[-1].split('_')[-1])
+            final_output_dir = model_save_dir
+            final_log_file = Path(model_save_dir) / log_file
+
         else:
+            if cfg.eval:
+                dataset = dataset.get("test")
+            else:
+                dataset = dataset.get('train') if dataset.get('train', None) is not None else dataset.get('val')
+            model = cfg.arch
+            cfg_name = os.path.basename(cfg_name).split('.')[0]
+            time_str = time.strftime('%Y-%m-%d-%H-%M-%S')
+
+            # store all output except tb_log file
+            final_output_dir = root_output_dir / dataset / model / cfg_name
+            if cfg.eval:
+                model_save_tmp = os.path.dirname(cfg.resume_from).split('/')[-1]
+            else:
+                model_save_tmp = "model_{}".format(time_str)
+
+            model_save_dir = final_output_dir / model_save_tmp
+
+            print_log('=> creating {}'.format(final_output_dir))
+            final_output_dir.mkdir(parents=True, exist_ok=True)
+            model_save_dir.mkdir(parents=True, exist_ok=True)
+
+            cfg_name = '{}_{}'.format(cfg_name, time_str)
+            # a logger to save results
+            log_file = '{}.log'.format(cfg_name)
+            # if cfg.eval:
+            #     final_log_file = model_save_dir / log_file
+            # else:
+            #     final_log_file = final_output_dir / log_file
             final_log_file = final_output_dir / log_file
             # tensorboard_log
             tensorboard_log_dir = root_output_dir / Path(cfg.log_dir) / dataset / model / cfg_name
@@ -298,8 +312,10 @@ def get_logger(name=None, cfg=None, cfg_name=None, phase='train', log_level=logg
             tensorboard_log_dir.mkdir(parents=True, exist_ok=True)
         logger = setup_logger(name, final_log_file)
 
+
     return logger, str(final_output_dir), str(model_save_dir), str(
         tensorboard_log_dir)  # logger,
+
 
 def print_log(msg, logger=None, level=logging.INFO, clear_logger=False):
     """Print a log message.
@@ -329,6 +345,7 @@ def print_log(msg, logger=None, level=logging.INFO, clear_logger=False):
             f'"silent" or None, but got {type(logger)}')
     if clear_logger:
         logger_initialized = {}
+
 
 def load_json_log(json_log):
     """load and convert json_logs to log_dicts.

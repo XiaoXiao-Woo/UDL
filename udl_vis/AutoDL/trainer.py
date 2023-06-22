@@ -239,7 +239,7 @@ def trainer(cfg, logger, build_model,
     ############################################################
     # 载入模型
     ############################################################
-
+    generator = None
     resume_from = None
     if cfg.get('resume_from', None) is None and cfg.get('auto_resume'):
         resume_from = find_latest_checkpoint(cfg.work_dir)
@@ -284,6 +284,8 @@ def trainer(cfg, logger, build_model,
 
         if 'train' in mode:
             train_loader, train_sampler, generator = sess.get_dataloader(cfg.dataset[mode], distributed, state_dataloader)
+            # 保存generator状态用于恢复数据批次/轮次
+            runner.generator = generator
             if cfg.once_epoch:
                 train_loader = iter(list(train_loader))
             data_loaders[mode] = train_loader
@@ -291,13 +293,12 @@ def trainer(cfg, logger, build_model,
             if len(cfg.workflow) == 0:
                 cfg.workflow.append(('simple_train', 1))
 
-    # 保存generator状态用于恢复数据批次/轮次
-    runner.generator = generator
+
     ############################################################
     # 载入数据，运行模型
     ############################################################
     # print(inspect.getfile(model.model.__class__).split(cfg.arch)[0])
-    if cfg.use_log_and_save:
+    if cfg.use_log_and_save and not os.path.exists("/".join([cfg.work_dir, "codes"])):
         shutil.copytree("/".join([inspect.getfile(model.model.module.__class__).split(cfg.arch)[0], cfg.arch]),
                         "/".join([cfg.work_dir, "codes"]))
 
