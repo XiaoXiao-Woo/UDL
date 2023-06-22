@@ -18,7 +18,7 @@ See the [repo](https://github.com/liangjiandeng/PanCollection) for more detailed
 For the implementation of DCFNet as described in the ICCV paper "Dynamic Cross Feature Fusion for Remote Sensing Pansharpening," please refer to the [branch](https://github.com/XiaoXiao-Woo/UDL/blob/UDL_DCFNet) in the this repository.
 
 ## Requirements
-* Python3.7+, Pytorch>=1.6.0
+* Python3.7+, Pytorch>=1.9.0
 * NVIDIA GPU + CUDA
 * Run `python setup.py develop`
 
