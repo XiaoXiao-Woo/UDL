@@ -12,6 +12,7 @@ from ..checkpoint import save_checkpoint, get_best_k_model
 import platform
 from udl_vis import mmcv
 import shutil
+import numpy as np
 
 @HOOKS.register_module()
 class CheckpointHook(Hook):
@@ -173,10 +174,8 @@ class CheckpointHook(Hook):
             self._save_checkpoint(runner)
 
 
-
 @HOOKS.register_module()
 class ModelCheckpoint(Hook):
-
     rule_map = {'greater': lambda x, y: x >= y, 'less': lambda x, y: x <= y}
     indicator_rule_map = {'greater': lambda x, y: max(x, y), 'less': lambda x, y: min(x, y)}
     _default_greater_keys = [
@@ -186,7 +185,8 @@ class ModelCheckpoint(Hook):
     _default_best_prec1 = {'greater': -inf, 'less': inf}
     _default_less_keys = ['loss', 'sam', 'ergas']
 
-    def __init__(self, indicator: str, formatter_filename="model_best_{epoch},{best_metric}", print_freq=1, save_top_k: int=1,
+    def __init__(self, indicator: str, formatter_filename="model_best_{epoch},{best_metric}", save_interval=1,
+                 save_top_k: int = 1, use_log_and_save=True,
                  greater_keys=None, less_keys=None, best_prec1=None, best_epoch=0, sync_buffer=False):
         '''
         Args:
@@ -197,8 +197,9 @@ class ModelCheckpoint(Hook):
                         Please note that the monitors are checked every ``every_n_epochs`` epochs.
             Returns:
         '''
+        self.use_log_and_save = use_log_and_save
         self.best_epoch = best_epoch
-        self.print_freq = print_freq
+        self.save_interval = save_interval
         self.save_top_k = save_top_k
         self.sync_buffer = sync_buffer
         self.indicator = 'top-1' if indicator == 'top' else indicator
@@ -242,20 +243,18 @@ class ModelCheckpoint(Hook):
     def before_run(self, runner):
         self.save_model_path = runner.work_dir
         self.ckpt = os.path.join(self.save_model_path, 'checkpoint')
-        os.makedirs(self.save_model_path, exist_ok=True)
+        # os.makedirs(self.save_model_path, exist_ok=True)
         print_log(f'Checkpoints will be saved to {self.save_model_path}', logger=runner.logger)
-
 
     def earlyStopping(self, avg_grad_norm):
 
         if avg_grad_norm > 100:
             return True
 
-
     def after_train_epoch(self, runner):
         if self.sync_buffer:
             allreduce_params(runner.model.buffers())
-        metrics = runner.metrics# metrics = {k: meter.avg for k, meter in runner.log_buffer.meters.items()}
+        metrics = runner.metrics  # metrics = {k: meter.avg for k, meter in runner.log_buffer.meters.items()}
         runner.earlyStop = self.earlyStopping(metrics.get('grad_norm', 0))
         self.save_checkpoint(runner, metrics)
 
@@ -271,47 +270,58 @@ class ModelCheckpoint(Hook):
         # meta.update(epoch=meta.pop('epoch') + 1, iter=meta.pop('iter'))
         filepath = os.path.join(out_dir, filename)
         # save_checkpoint(meta.pop('model'), filepath, optimizer=meta.pop('optimizer'), meta=meta)
-        save_checkpoint(filepath, meta=meta)
-        if create_symlink or is_best:
-            dst_file = os.path.join(out_dir, 'model_best_.pth')
-            if platform.system() != 'Windows':
-                mmcv.symlink(filename, dst_file)
-            else:
-                shutil.copy(filepath, dst_file)
+        if self.use_log_and_save:
+            save_checkpoint(filepath, meta=meta)
+            if create_symlink and is_best:
+                dst_file = os.path.join(out_dir, f'model_best_{filename}')
+                if platform.system() != 'Windows':
+                    mmcv.symlink(filename, dst_file)
+                else:
+                    shutil.copy(filepath, dst_file)
 
     @master_only
     def save_checkpoint(self, runner, metrics):
         flag = False
+        epoch =  runner.epoch + 1
+        iter = runner.iter + 1
         if not hasattr(runner.model, 'train') and isinstance(runner.model.model, dict):
             flag = True
             stats = {}
             for k, m in runner.model.model.items():
                 stats[k] = {
-                    'epoch': runner.epoch,
-                    'iter': runner.iter,
+                    'epoch': epoch,
+                    'iter': iter,
                     'model': m,
                     'best_metric': {name: value for name, value in metrics.items() if
                                     name not in ['grad_norm', 'lr', 'time', 'data_time']},
                     # 保存多个metric的数值,  实际比较的时候还是只有一个
                     'loss': metrics['loss'],
-                    'best_epoch': runner._epoch,
-                    'optimizer': runner.optimizer[k]
+                    'best_epoch': epoch,
+                    'optimizer': runner.optimizer[k],
+                    'seed': runner.seed,
+                    'state_dataloader': runner.generator.get_state()
                 }
                 runner.metrics.update(
                     {'best_metric': {k: stats[k]['best_metric']}, 'best_epoch': {k: stats[k]['best_epoch']}})
         else:
             stats = {
-                'epoch': runner.epoch,
-                'iter': runner.iter,
+                'epoch': epoch,
+                'iter': iter,
                 'model': runner.model,
                 'best_metric': {name: value for name, value in metrics.items() if
                                 name not in ['grad_norm', 'lr', 'time', 'data_time']},
                 # 保存多个metric的数值,  实际比较的时候还是只有一个
                 'loss': metrics['loss'],
-                'best_epoch': runner._epoch,
-                'optimizer': runner.optimizer
+                'best_epoch': epoch,
+                'optimizer': runner.optimizer,
+                'seed': runner.seed,
+                'state_dataloader': runner.generator.get_state()
             }
             runner.metrics.update(best_metric=stats['best_metric'], best_epoch=stats['best_epoch'])
+        # runner.optimizer.param_groups[0]['params'][0].mean()
+        # Out[2]: tensor(0.0015, device='cuda:0', grad_fn= < MeanBackward0 >)
+        # runner.optimizer.param_groups[0]['params'][1].mean()
+        # Out[3]: tensor(-0.0080, device='cuda:0', grad_fn= < MeanBackward0 >)
 
         new_best_k_model_flag = []
         indicator = self.indicator
@@ -327,7 +337,7 @@ class ModelCheckpoint(Hook):
         if save_top_k == 0:
             stats['best_metric'] = self._default_best_prec1[self.rule]
             stats['best_epoch'] = 0
-            self._save_checkpoint(stats, self.save_model_path, is_best=False, filename=f"{stats['epoch']}.pth.tar")
+            self._save_checkpoint(stats, self.save_model_path, is_best=False, filename=f"{epoch}.pth.tar")
 
         if save_top_k >= 1:
             # self.best_prec1 = self.indicator_func(self.best_prec1, stats[self.indicator])
@@ -357,7 +367,7 @@ class ModelCheckpoint(Hook):
                         # best_k_model.pop(str(index))
                         # best_k_model.update(ckpt_stats)
                         # best_k_model[index] = list(ckpt_stats.popitem())
-                        fname = self.save_model_path + "/" + best_k_model[index][2]
+                        fname = self.save_model_path + "/" + best_k_model[index][2] + '.pth.tar'
                         ckpt_stats.append(None)
                         best_k_model[index] = ckpt_stats
 
@@ -372,7 +382,7 @@ class ModelCheckpoint(Hook):
                     outs = [self.formatter_filename.format(**line) + "\n" for line in best_k_model]
                     f.writelines(outs)
             else:
-                if not flag:
+                if not flag and self.use_log_and_save:
                     with open(self.ckpt, 'a') as f:
                         outs = self.formatter_filename.format(**stats) + "\n"
                         f.writelines(outs)
@@ -382,14 +392,22 @@ class ModelCheckpoint(Hook):
                 #     new_best_k_model_flag = [True]
 
             is_best = any(new_best_k_model_flag)
-            if runner.epoch % self.print_freq == 0 or is_best:
+            if epoch % self.save_interval == 0 or is_best:
                 self._save_checkpoint(
-                        stats, out_dir=self.save_model_path, is_best=is_best, filename=f"{runner.epoch}.pth.tar")
+                    stats, out_dir=self.save_model_path, is_best=is_best, filename=f"{epoch}.pth.tar")
 
                 if not flag:
                     print_log(' * Best training metrics so far@ {best_metric} in epoch {best_epoch}'.format(
                         best_metric=stats['best_metric'], best_epoch=stats['best_epoch']), logger=runner.logger
                     )
+                    # [('train', 1), ('test', 0)] 只测试best training loss
+                    # [('train', 1), ('test', 1)] 不重复测试
+                    # [('train', 10), ('test', 1)], best training loss和interval的测试,有重复要去除
+                    if (epoch % runner.train_interval != 0 or (runner.train_interval == 1 and runner.test_interval == 0)) \
+                            and 'test' in runner.data_loaders.keys():
+                        runner.epoch += 1 # 规避执行顺序: train: (save) + (epoch++) ->val/test
+                        runner.val(runner.data_loaders['test'], test_mode='test')
+                        runner.epoch -= 1
 
             return stats
 
@@ -401,9 +419,3 @@ class ModelCheckpoint(Hook):
             if isinstance(runner.model.model, dict):
                 runner.model.model['PAN2MS'].module.free()
     # raise NotImplementedError("after_train_iter is not implemented by ModelCheckpoint (customed)")
-
-
-
-
-
-

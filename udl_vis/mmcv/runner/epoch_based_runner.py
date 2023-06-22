@@ -68,6 +68,7 @@ class EpochBasedRunner(BaseRunner):
         self.data_loader = data_loader
         self._max_iters = self._max_epochs * len(self.data_loader)
         self.call_hook('before_train_epoch')
+        tic = time.time()
         time.sleep(2)  # Prevent possible deadlock during epoch transition
         for i, data_batch in enumerate(self.data_loader):
             self._inner_iter = i
@@ -75,15 +76,16 @@ class EpochBasedRunner(BaseRunner):
             self.run_iter(data_batch, train_mode=True, **kwargs)
             self.call_hook('after_train_iter')
             self._iter += 1
-
+            # break
         self.metrics = {k: meter.avg for k, meter in self.log_buffer.meters.items()}
+        self.metrics.update(epoch_time=time.time() - tic)
         self.call_hook('after_train_epoch')
         self._epoch += 1
 
     def simple_train(self, data_loader, **kwargs):
         optimizer = self.optimizer
         accumulated_step = self.opt_cfg.get('accumulated_step', 1)
-        clip_max_norm = self.opt_cfg.get('clip_max_norm', 0)
+        grad_clip = self.opt_cfg.get('grad_clip', 0)
         print_freq = self.opt_cfg.get('print_freq', 1)
         nni = self.opt_cfg.get('nni', None)
         self.model.train()
@@ -99,8 +101,8 @@ class EpochBasedRunner(BaseRunner):
             self.run_iter(data_batch, train_mode=True, **kwargs)
             losses = self.outputs['loss'] / accumulated_step
             losses.backward()
-            if clip_max_norm > 0:
-                grad_norm = torch.nn.utils.clip_grad_norm_(self.model.parameters(), clip_max_norm)
+            if grad_clip:
+                grad_norm = torch.nn.utils.clip_grad_norm_(self.model.parameters(), grad_clip)
             else:
                 grad_norm = get_grad_norm(self.model.parameters())
             if idx % accumulated_step == 0:
@@ -145,11 +147,13 @@ class EpochBasedRunner(BaseRunner):
             self.nni.report_final_result({name: value for name, value in stats.items() if opt_cfg['metrics'] in name})
         # 仅进行验证时触发，结束while
         metric_logger.clear()
-        if not self.flag:
+        if not self.eval_flag:
             self._epoch += 1
+            self.eval_flag = True
 
     @torch.no_grad()
     def val(self, data_loader, **kwargs):
+        kwargs['test_mode'] = False if not kwargs.get('test_mode', None) else True
         if hasattr(self.model, 'eval'):
             self.model.eval()
         elif isinstance(self.model.model, dict):
@@ -157,7 +161,7 @@ class EpochBasedRunner(BaseRunner):
                 self.model.model[name].eval()
         else:
             self.model.model.eval()
-        self.mode = 'val'
+        self.mode = 'val' if not kwargs.get('test_mode', None) else 'test'
         self.data_loader = data_loader
         self.call_hook('before_val_epoch')
         time.sleep(2)  # Prevent possible deadlock during epoch transition
@@ -168,12 +172,19 @@ class EpochBasedRunner(BaseRunner):
             self.run_iter(data_batch, train_mode=False, idx=i,
                           img_range=self.opt_cfg['img_range'], eval=self.opt_cfg['eval'],
                           save_fmt=self.opt_cfg['save_fmt'], filename=data_batch.get('filename', [None])[0], save_dir=self.save_dir,
-                          val_mode=self.opt_cfg['val_mode'])
+                          **kwargs)
+                          # val_mode=self.opt_cfg['val_mode'])
             self.call_hook('after_val_iter')
-        print("test time:", time.time() - tic)
+            # break
+        print_log(f"test time: {time.time() - tic}", logger=self.logger)
         self.call_hook('after_val_epoch')
-        if self.opt_cfg['eval']:
+        if self.opt_cfg['eval'] or not self.eval_flag:
             self._epoch += 1
+            self.eval_flag = True
+
+    @torch.no_grad()
+    def test(self, data_loader, **kwargs):
+        return self.val(data_loader, test_mode=True, **kwargs)
 
     def run(self, data_loaders, workflow, max_epochs=None, **kwargs):
         """Start running.
@@ -197,15 +208,20 @@ class EpochBasedRunner(BaseRunner):
 
         assert self._max_epochs is not None, (
             'max_epochs must be specified during instantiation')
-        self.flag = any('train' in mode for mode, _ in workflow)
-        self.workflow = workflow
-        self.data_length = 1
+        self.eval_flag = any('train' in mode for mode, _ in workflow)
+        self.data_loaders = data_loaders
+        self.data_length = {}
         for i, flow in enumerate(workflow):
             mode, epochs = flow
-            if mode == 'train':
-                self._max_iters = self._max_epochs * len(data_loaders[mode])
-                self.data_length = len(data_loaders[mode])
-                break
+            self.data_length[mode] = len(data_loaders[mode])
+            if mode == "train":
+                self.train_interval = epochs
+            if mode == "test":
+                self.test_interval = epochs
+        if 'train' in data_loaders.keys():
+            self._max_iters = self._max_epochs * len(data_loaders['train'])
+
+
 
 
         work_dir = self.work_dir if self.work_dir is not None else 'NONE'
@@ -217,11 +233,11 @@ class EpochBasedRunner(BaseRunner):
                   logger=self.logger)
         self.call_hook('before_run')
         tic = time.time()
-        print_freq = self.opt_cfg.get('print_freq', 1)
         # from 1 to self._max_epochs, not from 0
-        while self.epoch <= self._max_epochs:
+        while self.epoch < self._max_epochs or not self.eval_flag:
             for i, flow in enumerate(workflow):
                 mode, epochs = flow
+
                 if isinstance(mode, str):  # self.train()
                     if not hasattr(self, mode):
                         raise ValueError(
@@ -245,6 +261,7 @@ class EpochBasedRunner(BaseRunner):
         total_time = time.time() - tic
         total_time_str = str(datetime.timedelta(seconds=int(total_time)))
         print_log('Training time {}'.format(total_time_str), logger=self.logger)
+
 
     def save_checkpoint(self,
                         out_dir,

@@ -1,11 +1,9 @@
 # GPL License
-# Copyright (C) 2021 , UESTC
-# All Rights Reserved 
-#
-# @Time    : 2022/9/16 22:28
+# Copyright (C) UESTC
+# All Rights Reserved
 # @Author  : Xiao Wu
 # @reference: 
-#
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F

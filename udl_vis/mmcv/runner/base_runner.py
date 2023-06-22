@@ -1,23 +1,24 @@
 # Copyright (c) OpenMMLab. All rights reserved.
 import copy
 import logging
+import os.path
 import os.path as osp
 import warnings
 from abc import ABCMeta, abstractmethod
 
 import torch
+import numpy as np
 from torch.optim import Optimizer
 
 from udl_vis import mmcv
 from ..parallel import is_module_wrapper
-from .checkpoint import load_checkpoint
+from .checkpoint import load_checkpoint, print_log
 from .dist_utils import get_dist_info
 from .hooks import HOOKS, Hook
 from .log_buffer import LogBuffer
 from .priority import Priority, get_priority
 from .utils import get_time_str
 from .record import MetricLogger
-
 
 class BaseRunner(metaclass=ABCMeta):
     """The base class of Runner, a training helper for PyTorch.
@@ -53,6 +54,7 @@ class BaseRunner(metaclass=ABCMeta):
                  model,
                  batch_processor=None,
                  optimizer=None,
+                 seed=None,
                  work_dir=None,
                  logger=None,
                  meta=None,
@@ -94,14 +96,14 @@ class BaseRunner(metaclass=ABCMeta):
 
         # check the type of `logger`
         if not isinstance(logger, logging.Logger):
-            raise TypeError(f'logger must be a logging.Logger object, '
+            warnings.warn(f'logger must be a logging.Logger object, '
                             f'but got {type(logger)}')
 
         # check the type of `meta`
         if meta is not None and not isinstance(meta, dict):
             raise TypeError(
                 f'meta must be a dict or None, but got {type(meta)}')
-
+        self.test_interval = 1
         self.model = model
         self.batch_processor = batch_processor
         self.optimizer = optimizer
@@ -109,13 +111,15 @@ class BaseRunner(metaclass=ABCMeta):
         self.meta = meta
         self.opt_cfg = opt_cfg
         self.earlyStop = False
+        self.seed = seed
         # create work_dir
         save_dir = opt_cfg['save_dir']
         if mmcv.is_str(work_dir):
             self.work_dir = osp.abspath(work_dir)
             self.save_dir = osp.abspath(save_dir)
-            mmcv.mkdir_or_exist(self.save_dir)
-            mmcv.mkdir_or_exist(self.work_dir)
+            if os.path.isdir(work_dir):
+                mmcv.mkdir_or_exist(self.save_dir)
+                # mmcv.mkdir_or_exist(self.work_dir)
         elif work_dir is None:
             self.work_dir = None
             self.save_dir = None
@@ -174,6 +178,10 @@ class BaseRunner(metaclass=ABCMeta):
     def epoch(self):
         """int: Current epoch."""
         return self._epoch
+
+    @epoch.setter
+    def epoch(self, value):
+        self._epoch = value
 
     @property
     def iter(self):
@@ -347,22 +355,24 @@ class BaseRunner(metaclass=ABCMeta):
                         filename,
                         resume_mode,
                         map_location='cpu',
+                        prefix='',
                         strict=False,
                         revise_keys=[(r'^module.', '')]):
 
         return load_checkpoint(
             resume_mode,
-            self.work_dir,
+            os.path.dirname(filename) if os.path.isdir(os.path.dirname(filename)) else self.work_dir,
             self.model,
             filename,
             map_location,
+            prefix,
             strict,
             self.logger,
             revise_keys=revise_keys)
 
     def resume(self,
                resume, resume_mode,
-               reset_lr, lr,
+               reset_lr, lr, prefix,
                resume_optimizer=True,
                map_location='default'):
 
@@ -371,16 +381,16 @@ class BaseRunner(metaclass=ABCMeta):
                 device_id = torch.cuda.current_device()
                 checkpoint = self.load_checkpoint(
                     resume, resume_mode,
-                    map_location=lambda storage, loc: storage.cuda(device_id))
+                    map_location=lambda storage, loc: storage.cuda(device_id), prefix=prefix)
             else:
-                checkpoint = self.load_checkpoint(resume, resume_mode)
+                checkpoint = self.load_checkpoint(resume, resume_mode, prefix=prefix)
         else:
             checkpoint = self.load_checkpoint(
-                resume, resume_mode, map_location=map_location)
+                resume, resume_mode, map_location=map_location, prefix=prefix)
 
         self._epoch = checkpoint['meta']['epoch']
         if self.opt_cfg['eval']:
-            self._max_epochs = self._epoch
+            self._max_epochs = self._epoch + 1
         self._iter = checkpoint['meta']['iter']
         if self.meta is None:
             self.meta = {}
@@ -398,8 +408,8 @@ class BaseRunner(metaclass=ABCMeta):
                     previous_gpu_ids) != self.world_size:
                 self._iter = int(self._iter * len(previous_gpu_ids) /
                                  self.world_size)
-                self.logger.info('the iteration number is changed due to '
-                                 'change of GPU number')
+                print_log('the iteration number is changed due to '
+                                 'change of GPU number', logger=self.logger)
 
         # resume meta information meta
         self.meta = checkpoint['meta']
@@ -413,11 +423,25 @@ class BaseRunner(metaclass=ABCMeta):
         #     print_log("loaded checkpoint.optimizer")
         if 'optimizer' in checkpoint and resume_optimizer:
             if isinstance(self.optimizer, Optimizer):
+                # self.optimizer.param_groups[0]['params'][0].mean()
+                # Out[14]: tensor(0.0024, device='cuda:0', grad_fn=<MeanBackward0>)
+                # Out[15]: tensor(-0.0046, device='cuda:0', grad_fn=<MeanBackward0>)
+                # checkpoint['optimizer']['param_groups'][0]['params'][0]
+                # 0
+                # param_sum = np.sum([param.sum().cpu().numpy() for _, v in
+                #                     checkpoint['optimizer']['state'].items() for param in list(v.values())])
                 self.optimizer.load_state_dict(checkpoint['optimizer'])
+                new_opt_param_groups = np.sum([param.cpu().detach().numpy().sum() for param in
+                                    self.optimizer.param_groups[0]['params']])
+                new_opt_state = np.sum([param.cpu().detach().numpy().sum() for _, v in
+                                    self.optimizer.state.items()  for param in list(v.values())])
+
+                # self.optimizer.param_groups.checkpoint['optimizer']['param_groups']
                 if lr > 0 and reset_lr:
                     for param_group in self.optimizer.param_groups:
                             param_group['lr'] = lr
-                    self.logger.info("loaded checkpoint.optimizer")
+                # values = [np.mean(v['exp_avg'].cpu().numpy()) for v in self.optimizer.state_dict()['param_groups']] #.items()
+                print_log(f"loaded checkpoint.optimizer, opt={new_opt_param_groups}, {new_opt_state}", logger=self.logger) #
             elif isinstance(self.optimizer, dict):
                 for k in self.optimizer.keys():
                     self.optimizer[k].load_state_dict(
@@ -425,13 +449,15 @@ class BaseRunner(metaclass=ABCMeta):
                 if lr > 0 and reset_lr:
                     for param_group in self.optimizer[k].param_groups:
                             param_group['lr'] = lr
-                    self.logger.info("loaded checkpoint.optimizer")
+                print_log("loaded checkpoint.optimizer.", logger=self.logger)
             else:
                 raise TypeError(
                     'Optimizer should be dict or torch.optim.Optimizer '
                     f'but got {type(self.optimizer)}')
 
-        self.logger.info('resumed epoch %d, iter %d', self.epoch, self.iter)
+        print_log(f'resumed epoch {self.epoch}, iter {self.iter}', logger=self.logger)
+
+        return checkpoint['meta']['state_dataloader']
 
     def register_lr_hook(self, lr_config):
         if lr_config is None:

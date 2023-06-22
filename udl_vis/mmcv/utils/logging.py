@@ -277,12 +277,13 @@ def get_logger(name=None, cfg=None, cfg_name=None, phase='train', log_level=logg
 
     model_save_dir = final_output_dir / model_save_tmp
     # if not dist_print:
-    print_log('=> creating {}'.format(final_output_dir))
-    final_output_dir.mkdir(parents=True, exist_ok=True)
-    model_save_dir.mkdir(parents=True, exist_ok=True)
 
 
-    if cfg.use_log:
+    if cfg.use_log_and_save:
+        print_log('=> creating {}'.format(final_output_dir))
+        final_output_dir.mkdir(parents=True, exist_ok=True)
+        model_save_dir.mkdir(parents=True, exist_ok=True)
+
         cfg_name = '{}_{}'.format(cfg_name, time_str)
         # a logger to save results
         log_file = '{}_{}.log'.format(cfg_name, phase)

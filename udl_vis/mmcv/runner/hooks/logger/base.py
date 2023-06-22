@@ -59,21 +59,24 @@ class LoggerHook(Hook):
 
     def get_mode(self, runner):
         if runner.mode == 'train':
-            if 'time' in runner.log_buffer.meters: #output
-                mode = 'train'
-            else:
-                mode = 'val'
+            mode = 'train'
+            # if 'time' in runner.log_buffer.meters: #output
+            #     mode = 'train'
+            # else:
+            #     mode = 'val'
         elif runner.mode == 'val':
             mode = 'val'
+        elif runner.mode == 'test':
+            mode = 'test'
         else:
-            raise ValueError(f"runner mode should be 'train' or 'val', "
+            raise ValueError(f"runner mode should be 'train' or 'val' or 'test', "
                              f'but got {runner.mode}')
         return mode
 
     def get_epoch(self, runner):
         if runner.mode == 'train':
-            epoch = runner.epoch# + 1
-        elif runner.mode == 'val':
+            epoch = runner.epoch + 1
+        elif runner.mode != 'train':
             # normal val mode
             # runner.epoch += 1 has been done before val workflow
             epoch = runner.epoch
@@ -87,7 +90,11 @@ class LoggerHook(Hook):
         if self.by_epoch and inner_iter:
             current_iter = runner.inner_iter + 1
         else:
-            current_iter = runner.iter + 1
+            if runner.mode == 'train':
+                current_iter = runner.iter + 1
+            else:
+                current_iter = runner.iter
+
         return current_iter
 
     def get_lr_tags(self, runner):
@@ -153,8 +160,8 @@ class LoggerHook(Hook):
         #     self.log(runner)
         #     if self.reset_flag:
         #         runner.log_buffer.clear_output()
-
-        if self.by_epoch and self.every_n_inner_iters(runner, self.interval):
+        # print(self.end_of_n_inner_iters(runner))
+        if self.by_epoch and (self.every_n_inner_iters(runner, self.interval) or self.end_of_n_inner_iters(runner)):
             # runner.log_buffer.ready = True
             self.log(runner)
             # if self.reset_flag:
@@ -163,8 +170,8 @@ class LoggerHook(Hook):
 
     def after_train_epoch(self, runner):
         # if runner.log_buffer.ready:
-        if self.every_n_epochs(runner, self.interval):
-            self.log(runner)
+        if self.every_n_epochs(runner, self.interval) or self.is_last_epoch(runner):
+            # self.log(runner)
             if self.reset_flag:
                 runner.log_buffer.clear_output()
 

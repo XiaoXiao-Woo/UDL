@@ -9,13 +9,14 @@ import platform
 import os
 from udl_vis.Basis.python_sub_class import TaskDispatcher
 from udl_vis.Basis.config import Config
+from udl_vis.Basis.logger import print_log
 import warnings
 
 def common_cfg():
     parser = argparse.ArgumentParser(description='PyTorch Training')
 
     # * Logger
-    parser.add_argument('--use-log', default=True
+    parser.add_argument('--use_log_and_save', default=True
                         , type=bool)
     parser.add_argument('--log-dir', metavar='DIR', default='logs',
                         help='path to save log')
@@ -44,8 +45,8 @@ def common_cfg():
 
     # * Training
     parser.add_argument('--accumulated-step', default=1, type=int)
-    parser.add_argument('--clip_max_norm', default=0, type=float,
-                        help='gradient clipping max norm')
+    parser.add_argument('--grad_clip', type=float, default=None,
+                        help='dataset file extension')
 
     # * extra
     parser.add_argument('--seed', default=10, type=int,
@@ -82,17 +83,20 @@ def common_cfg():
     args.resume_mode = 'best'
     args.validate = False
     args.gpu_ids = [0]
+    args.prefix_model = ''
     # args.workflow = []
 
     return Config(args)
+
 
 def nni_cfg(args):
     if args.mode == 'nni':
         import nni
         tuner_params = nni.get_next_parameter()
-        print("launcher: nni is running. \n", tuner_params)
+        print_log("launcher: nni is running. \n", tuner_paramsm)
         args.merge_from_dict(tuner_params)
     return args
+
 
 class get_cfg(TaskDispatcher, name='entrypoint'):
     def __init__(self, task=None, arch=None, **kwargs):
@@ -123,19 +127,20 @@ class get_cfg(TaskDispatcher, name='entrypoint'):
 
 
 def data_cfg(cfg):
-    if cfg.get('config', None) is not None:
-
-        if not os.path.isfile(cfg.config):
-            raise IOError(f"reading {cfg.config} failed")
-
+    if cfg.get('config', None) is not None and os.path.isfile(cfg.config):
+        print_log(f"reading {cfg.config}")
         cfg.merge_from_dict(cfg.fromfile(cfg.config))
-        if cfg.get('data', None) is not None and callable(cfg.data):
-            data_func = cfg.pop('data')
-            cfg.merge_from_dict(Config(data_func(cfg.data_dir)))
+    else:
+        print_log(f"reading {cfg.config} failed")
 
-        cfg.workflow = cfg.get('workflow', [])
-        if cfg.get('norm_cfg', None) is not None and cfg.launcher == 'none':
-            cfg.norm_cfg = 'BN'
+    if cfg.get('data', None) is not None and callable(cfg.data):
+        data_func = cfg.pop('data')
+        cfg.merge_from_dict(Config(data_func(cfg.data_dir)))
+
+    cfg.workflow = cfg.get('workflow', [])
+    if cfg.get('norm_cfg', None) is not None and cfg.launcher == 'none':
+        cfg.norm_cfg = 'BN'
+
 
     # modify loading COCO from extern
     # if hasattr(cfg, 'data'):

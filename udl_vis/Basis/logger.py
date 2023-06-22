@@ -130,7 +130,7 @@ def get_logger(name=None, cfg=None, cfg_name=None, phase='train', log_level=logg
     # initialization since it is a child of "a".
     for logger_name in logger_initialized:
         if name.startswith(logger_name):
-            if cfg.use_log:
+            if cfg.use_log_and_save:
                 return logging.getLogger(name)
             else:
                 return None
@@ -163,7 +163,7 @@ def get_logger(name=None, cfg=None, cfg_name=None, phase='train', log_level=logg
     model_save_dir.mkdir(parents=True, exist_ok=True)
 
 
-    if cfg.use_log:
+    if cfg.use_log_and_save:
         cfg_name = '{}_{}'.format(cfg_name, time_str)
         # a logger to save results
         log_file = '{}_{}.log'.format(cfg_name, phase)

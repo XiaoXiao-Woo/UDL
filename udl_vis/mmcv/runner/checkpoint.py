@@ -37,7 +37,7 @@ def _get_mmcv_home():
     return mmcv_home
 
 
-def load_state_dict(module, state_dict, strict=False, logger=None):
+def load_state_dict(module, state_dict, prefix='', strict=False, logger=None):
     """Load state_dict to a module.
 
     This method is modified from :meth:`torch.nn.Module.load_state_dict`.
@@ -98,7 +98,7 @@ def load_state_dict(module, state_dict, strict=False, logger=None):
                 if child is not None:
                     load(child, prefix + name + '.')
 
-    load(module)
+    load(module, prefix)
     load = None  # break load->load reference cycle
 
     # ignore "num_batches_tracked" of BN layers
@@ -581,7 +581,7 @@ def get_best_k_model(OUT_DIR, indicator, _NAME_PREFIX="ckpt_ep_"):
             # best_k_models[indicator].append(float(v))
 
     if len(best_k_models) == 0:
-        msg = f"checkpoint in directory {OUT_DIR} don't exist or is empty"
+        msg = f"checkpoint in directory {OUT_DIR} is not right or empty"
         warnings.warn(msg)
 
     return best_k_models, best_fname
@@ -592,6 +592,7 @@ def load_checkpoint(resume_mode,
                     model,
                     filename,
                     map_location=None,
+                    prefix='',
                     strict=False,
                     logger=None,
                     revise_keys=[(r'^module\.', '')]):
@@ -616,27 +617,30 @@ def load_checkpoint(resume_mode,
     """
     ################
     # 只从work_dir里读ckpt，用于模型的继续训练
-    resume_mode = resume_mode.lower()
-    if resume_mode == 'best':
-        _, best_k_fname = get_best_k_model(os.path.join(work_dir, "checkpoint"), None)
-        if len(best_k_fname) > 0:
-            best_k_model = sorted(best_k_fname)[-1]
-            filename = os.path.join(work_dir, best_k_model)
-        else:
-            print_log("loading best model failed, maybe it's from scratch currently.", logger=logger)
-
-    elif resume_mode == 'auto':
-        ckpt = get_last_checkpoint(work_dir)
-        if ckpt is not None:
-            filename = ckpt
-    ################
     if not os.path.isfile(filename):
-        print_log(f"no checkpoint found at {filename}", logger=logger)
-        return {'meta': {'epoch': 1,
-                         'iter': 1,
-                         'best_epoch': 1,
-                         'best_metric': None}}
-    ################
+        resume_mode = resume_mode.lower()
+        if resume_mode == 'best':
+            _, best_k_fname = get_best_k_model(os.path.join(work_dir, "checkpoint"), None)
+            if len(best_k_fname) > 0:
+                best_k_model = sorted(best_k_fname)[-1]
+                filename = os.path.join(work_dir, best_k_model, '.pth.tar')
+            else:
+                print_log("loading best model failed, maybe it's from scratch currently.", logger=logger)
+
+        elif resume_mode == 'auto':
+            ckpt = get_last_checkpoint(work_dir)
+            if ckpt is not None:
+                filename = ckpt
+        ################
+        if not os.path.isfile(filename):
+            print_log(f"no checkpoint found at {filename}", logger=logger)
+            return {'meta': {'epoch': 0,
+                             'iter': 0,
+                             'best_epoch': 0,
+                             'best_metric': None,
+                             'state_dataloader': None
+                             }}
+        ################
 
     checkpoint = _load_checkpoint(filename, map_location, logger)
     # OrderedDict is a subclass of dict
@@ -666,7 +670,7 @@ def load_checkpoint(resume_mode,
                      for k, v in state_dict.items()})
             # Keep metadata in state_dict
             state_dict._metadata = metadata
-            load_state_dict(m, state_dict, strict, logger)
+            load_state_dict(m, state_dict, prefix, strict, logger)
     else:
         if 'model' in checkpoint:
             state_dict = checkpoint['model']
@@ -683,7 +687,7 @@ def load_checkpoint(resume_mode,
                  for k, v in state_dict.items()})
         # Keep metadata in state_dict
         state_dict._metadata = metadata
-        load_state_dict(mod, state_dict, strict, logger)
+        load_state_dict(mod, state_dict, prefix, strict, logger)
         # if optimizer is not None:
         #     if checkpoint.get('optimizer') is not None:
         #         optimizer.load_state_dict(checkpoint['optimizer'])
@@ -695,10 +699,11 @@ def load_checkpoint(resume_mode,
 
         # load state_dict
 
-        checkpoint['meta'].setdefault('epoch', 0) + 1
-        checkpoint['meta'].setdefault('iter', 0) + 1
-        checkpoint['meta'].setdefault('best_epoch', 0)
+        checkpoint['meta'].setdefault('epoch', 0) # checkpoint['meta']['epoch']  =
+        checkpoint['meta'].setdefault('iter', 0)  # checkpoint['meta']['iter']  =
+        checkpoint['meta'].setdefault('best_epoch', 0) #checkpoint['meta']['best_epoch']  =
         checkpoint['meta'].setdefault('best_metric', None)
+        checkpoint['meta'].setdefault('state_dataloader', None)
 
     return checkpoint
 

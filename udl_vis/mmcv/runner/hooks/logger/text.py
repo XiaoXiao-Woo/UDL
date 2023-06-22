@@ -4,6 +4,7 @@ import os
 import os.path as osp
 from collections import OrderedDict
 
+import numpy as np
 import torch
 import torch.distributed as dist
 
@@ -56,6 +57,7 @@ class TextLoggerHook(LoggerHook):
     def __init__(self,
                  by_epoch=True,
                  interval=10,
+                 use_json=False,
                  ignore_last=True,
                  reset_flag=False,
                  interval_exp_name=1000,
@@ -68,6 +70,8 @@ class TextLoggerHook(LoggerHook):
         self.by_epoch = by_epoch
         self.time_sec_tot = 0
         self.interval_exp_name = interval_exp_name
+        self.use_json = use_json
+        self.status_end_of_n_inner_iters = False
 
         if out_dir is None and file_client_args is not None:
             raise ValueError(
@@ -106,7 +110,7 @@ class TextLoggerHook(LoggerHook):
         self.max_epochs = runner.max_epochs
         self.json_log_path = osp.join(runner.work_dir,
                                       f'{runner.timestamp}.log.json')
-        if runner.meta is not None:
+        if runner.meta is not None and runner.logger is not None and self.use_json:
             self._dump_log(runner.meta, runner)
 
     def _get_max_memory(self, runner):
@@ -140,8 +144,8 @@ class TextLoggerHook(LoggerHook):
             # by epoch: Epoch [4][100/1000]
             # by iter:  Iter [100/100000]
             if self.by_epoch:
-                log_str = f'Epoch [{log_dict["epoch"]}]/[{self.max_epochs}]' \
-                          f'[{log_dict["iter"]}/{self.data_length}]\t'
+                log_str = f'Iter [{log_dict["iter"]}] Epoch [{log_dict["epoch"]}/{self.max_epochs}]' \
+                          f'[{log_dict["inner_iter"]}/{self.data_length["train"]}]\t'
             else:
                 log_str = f'Iter [{log_dict["iter"]}/{runner.max_iters}]\t'
             log_str += f'{lr_str}, '
@@ -158,14 +162,21 @@ class TextLoggerHook(LoggerHook):
                 # statistic memory
                 if torch.cuda.is_available():
                     log_str += f'memory: {log_dict["memory"]}MB, '
+                if self.status_end_of_n_inner_iters:
+                    new_opt_param_groups = np.sum([param.cpu().detach().numpy().sum() for param in
+                                        runner.optimizer.param_groups[0]['params']])
+                    new_opt_state = np.sum([param.cpu().detach().numpy().sum() for _, v in
+                                        runner.optimizer.state.items()  for param in list(v.values())])
+                    log_str += f"opt_param_groups: {new_opt_param_groups}, opt_state: {new_opt_state} "
         else:
             # val/test time
             # here 1000 is the length of the val dataloader
             # by epoch: Epoch[val] [4][1000]
             # by iter: Iter[val] [1000]
             if self.by_epoch:
-                log_str = f'Epoch({log_dict["mode"]}) ' \
-                    f'[{log_dict["epoch"]}][{log_dict["iter"]}]\t'
+                log_str = f'Iter [{log_dict["iter"]}] Epoch({log_dict["mode"]}) ' \
+                          f'[{log_dict["epoch"]}]/[{self.max_epochs}]\t' \
+                          f'[{log_dict["inner_iter"]}/{self.data_length[log_dict["mode"]]}]\t'
             else:
                 log_str = f'Iter({log_dict["mode"]}) [{log_dict["iter"]}]\t'
 
@@ -175,7 +186,7 @@ class TextLoggerHook(LoggerHook):
             # these items have been in log_str
             if name in [
                     'mode', 'Epoch', 'iter', 'lr', 'time', 'data_time',
-                    'memory', 'epoch'
+                    'memory', 'epoch', 'inner_iter'
             ]:
                 continue
             if isinstance(val, float):
@@ -213,7 +224,8 @@ class TextLoggerHook(LoggerHook):
         log_dict = OrderedDict(
             mode=self.get_mode(runner),
             epoch=self.get_epoch(runner),
-            iter=cur_iter)
+            inner_iter=cur_iter,
+            iter=self.get_iter(runner))
 
         # only record lr of the first param group
         cur_lr = runner.current_lr()
@@ -233,9 +245,14 @@ class TextLoggerHook(LoggerHook):
 
         runner.metrics = {k: meter.avg for k, meter in runner.log_buffer.meters.items()}
         log_dict = dict(log_dict, **runner.metrics) #output
+        if self.status_end_of_n_inner_iters:
+            values = [np.mean(v['exp_avg'].cpu().numpy()) for k, v in runner.optimizer.state_dict()['state'].items()]
+            log_dict.update(opt=np.mean(values))
+
 
         self._log_info(log_dict, runner)
-        self._dump_log(log_dict, runner)
+        if self.use_json and runner.logger is not None:
+            self._dump_log(log_dict, runner)
         return log_dict
 
     def after_run(self, runner):

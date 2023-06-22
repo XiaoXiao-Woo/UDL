@@ -7,6 +7,7 @@ import argparse
 import copy
 import os
 import os.path as osp
+import shutil
 import warnings
 import random
 import numpy as np
@@ -25,6 +26,7 @@ from udl_vis.mmcv.runner import (DistSamplerSeedHook, EpochBasedRunner,
                                  Fp16OptimizerHook, OptimizerHook, build_optimizer,
                                  build_runner, get_dist_info)
 
+import inspect
 
 # 10s
 # from mmdet.datasets import (build_dataloader, build_dataset,
@@ -39,6 +41,7 @@ def trainer(cfg, logger, build_model,
     # TODO: 构建
     model, criterion, optimizer, scheduler = build_model(cfg.arch, cfg.task, cfg)
 
+    print_log(cfg.pretty_text, logger=logger)
 
     if hasattr(model, 'init_weights'):
         model.init_weights()
@@ -73,13 +76,13 @@ def trainer(cfg, logger, build_model,
     # ]
 
     sess = getDataSession(cfg)
-    cfg.valid_or_test = False
+    # cfg.valid_or_test = False
     if cfg.eval:
         cfg.workflow = [('test', 1)]
-    if not any('train' in mode for mode, _ in cfg.workflow):
-        cfg.eval = True
-    if not any('valid' in mode for mode, _ in cfg.workflow):
-        cfg.valid_or_test = True
+    # if not any('train' in mode for mode, _ in cfg.workflow):
+    #     cfg.eval = True
+    # if not any('valid' in mode for mode, _ in cfg.workflow):
+    #     cfg.valid_or_test = True
 
     # put model on gpus
     if distributed:
@@ -107,7 +110,7 @@ def trainer(cfg, logger, build_model,
 
     # 改到 build_model里，一次性设置，方便查找
     if cfg.get('optimizer', None) is not None:
-        optimizer = build_optimizer(model, cfg.optimizer)
+        optimizer = build_optimizer(model.model.module, cfg.optimizer)
 
     # 兼容argparser和配置文件的
     if 'runner' not in cfg:
@@ -128,19 +131,21 @@ def trainer(cfg, logger, build_model,
         default_args=dict(
             model=model,
             optimizer=optimizer,
+            seed=cfg.seed,
             work_dir=cfg.work_dir,
             logger=logger,
             meta=meta,
-            opt_cfg={'print_freq': cfg.print_freq,
+            opt_cfg={'log_interval': cfg.log_interval,
+                     'save_interval': cfg.save_interval,
                      'accumulated_step': cfg.accumulated_step,
-                     'clip_max_norm': cfg.clip_max_norm,
+                     'grad_clip': cfg.grad_clip,
                      'dataset': cfg.dataset,
                      'img_range': cfg.img_range,
                      'metrics': cfg.metrics,
                      'save_fmt': cfg.save_fmt,
                      'mode': cfg.mode,
                      'eval': cfg.eval,
-                     'val_mode': cfg.valid_or_test, # 在base_runner的resume里用于设置测试最大轮数来评估训练好的模型
+                     # 'val_mode': cfg.valid_or_test, # 在base_runner的resume里用于设置测试最大轮数来评估训练好的模型
                      'save_dir': cfg.work_dir + "/results"}))
 
     # an ugly workaround to make .log and .log.json filenames the same
@@ -159,7 +164,7 @@ def trainer(cfg, logger, build_model,
     ############################################################
     # register training hooks
     ############################################################
-    if cfg.get('config', None) is not None:
+    if cfg.get('config', None) is not None and os.path.isfile(cfg.config):
         '''
         optimizer = dict(type='SGD', lr=0.1, momentum=0.9, weight_decay=0.0001)
         optimizer_config = dict(grad_clip=None)
@@ -180,6 +185,7 @@ def trainer(cfg, logger, build_model,
             cfg.get('momentum_config', None),
             custom_hooks_config=cfg.get('custom_hooks', None))
 
+
     elif cfg.get('log_config', None) is None and len(cfg.workflow) and cfg.workflow[0][0] != 'simple_train':
         # 提供time, data_time, memory等，并且用于mode里区别IterBasedRunner? 在train模式下提供了有无time的区别
         if cfg.mode == 'nni':
@@ -187,14 +193,15 @@ def trainer(cfg, logger, build_model,
         if scheduler is not None:
             runner.register_lr_hook(dict(policy=scheduler.__class__.__name__[:-2], step=scheduler.step_size))
         runner.register_checkpoint_hook(
-            dict(type='ModelCheckpoint', indicator='loss', save_top_k=cfg.save_top_k, print_freq=10))
-        runner.register_optimizer_hook(dict(grad_clip=10))  # ExternOptimizer
+            dict(type='ModelCheckpoint', indicator='loss', save_top_k=cfg.save_top_k,
+                 use_log_and_save=cfg.use_log_and_save, save_interval=cfg.save_interval))
+        runner.register_optimizer_hook(dict(grad_clip=cfg.grad_clip))  # ExternOptimizer
         runner.register_timer_hook(dict(type='IterTimerHook'))
         log_config = [dict(type='TextLoggerHook')]
         if cfg.use_tfb:
             log_config.append(dict(type='TensorboardLoggerHook'))
         runner.register_logger_hooks(dict(
-            interval=cfg.print_freq,
+            interval=cfg.log_interval,
             hooks=log_config))
 
     else:
@@ -228,9 +235,23 @@ def trainer(cfg, logger, build_model,
     #     # priority of IterTimerHook has been modified from 'NORMAL' to 'LOW'.
     #     runner.register_hook(
     #         eval_hook(val_dataloader, **eval_cfg), priority='LOW')
+
+    ############################################################
+    # 载入模型
+    ############################################################
+
+    resume_from = None
+    if cfg.get('resume_from', None) is None and cfg.get('auto_resume'):
+        resume_from = find_latest_checkpoint(cfg.work_dir)
+    if resume_from is not None:
+        cfg.resume_from = resume_from
+
+    # if cfg.get('resume_from', None):
+    state_dataloader = runner.resume(cfg.resume_from, cfg.resume_mode, cfg.reset_lr, cfg.lr, cfg.prefix_model)
+    if cfg.get('load_from', None) and cfg.get('resume_from', None) is not None:
+        runner.load_checkpoint(cfg.load_from, cfg.resume_mode)
+
     data_loaders = {}
-
-
     for idx, flow in enumerate(cfg.workflow):
         mode, epoch = flow
         if 'test' in mode:
@@ -249,8 +270,8 @@ def trainer(cfg, logger, build_model,
                 runner.register_hook(
                     eval_hook(eval_loader, **eval_cfg), priority='LOW')
 
-            data_loaders['val'] = eval_loader
-            cfg.workflow[idx] = ('val', epoch)
+            data_loaders['test'] = eval_loader
+            cfg.workflow[idx] = ('test', epoch)
             # if len(cfg.workflow) == 0:
             #     cfg.workflow.append(('val', 1))
 
@@ -262,31 +283,24 @@ def trainer(cfg, logger, build_model,
             cfg.workflow[idx] = ('val', epoch)
 
         if 'train' in mode:
-            train_loader, train_sampler = sess.get_dataloader(cfg.dataset[mode], distributed)
+            train_loader, train_sampler, generator = sess.get_dataloader(cfg.dataset[mode], distributed, state_dataloader)
             if cfg.once_epoch:
                 train_loader = iter(list(train_loader))
             data_loaders[mode] = train_loader
 
             if len(cfg.workflow) == 0:
                 cfg.workflow.append(('simple_train', 1))
-    ############################################################
-    # 载入模型
-    ############################################################
 
-    resume_from = None
-    if cfg.get('resume_from', None) is None and cfg.get('auto_resume'):
-        resume_from = find_latest_checkpoint(cfg.work_dir)
-    if resume_from is not None:
-        cfg.resume_from = resume_from
-
-    # if cfg.get('resume_from', None):
-    runner.resume(cfg.resume_from, cfg.resume_mode, cfg.reset_lr, cfg.lr)
-    if cfg.get('load_from', None) and cfg.get('resume_from', None) is not None:
-        runner.load_checkpoint(cfg.load_from, cfg.resume_mode)
-
+    # 保存generator状态用于恢复数据批次/轮次
+    runner.generator = generator
     ############################################################
     # 载入数据，运行模型
     ############################################################
+    # print(inspect.getfile(model.model.__class__).split(cfg.arch)[0])
+    if cfg.use_log_and_save:
+        shutil.copytree("/".join([inspect.getfile(model.model.module.__class__).split(cfg.arch)[0], cfg.arch]),
+                        "/".join([cfg.work_dir, "codes"]))
+
     runner.run(data_loaders, cfg.workflow)
 
 
@@ -303,10 +317,10 @@ def main(cfg, build_model, getDataSession):
 
     logger, out_dir, model_save_dir, tfb_dir = create_logger(cfg, cfg.experimental_desc, 0)
     cfg.out_dir = cfg.work_dir = model_save_dir
-    seed = init_random_seed(cfg.seed)
-    print_log(f'Set random seed to {seed}', logger=logger)
+    cfg.seed = init_random_seed(cfg.seed)
+    print_log(f'Set random seed to {cfg.seed}', logger=logger)
 
-    set_random_seed(seed)
+    set_random_seed(cfg.seed)
 
     # if cfg.checkpoint_config is not None:
     #     # save mmdet version, config file content and class names in
