@@ -26,7 +26,9 @@ Note: Our project is based on MMCV, but you needn't to install it currently.
 
 ## Quick Start
 
-> pip install -i udl-vis https://pypi.org/simple
+> pip install -i pancollection https://pypi.org/simple
+
+PanCollection is used for remote sensing pansharpening, which is one of our applications.
 
 ### Quick Start for developer
 
