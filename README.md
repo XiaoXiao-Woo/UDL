@@ -1,11 +1,10 @@
-# UDL (Make Available on PyPI :tada:)
+# UDL (Make Available on [PyPI](https://pypi.org/project/udl-vis/) :tada:)
 
-UDL is a unified pytorch framework for vision research:
+UDL is a unified Pytorch framework for vision research:
 
-* UDL has faster library loading speed and more convenient reflection mechanism to call different models and methods.
+* UDL has a faster library loading speed and a more convenient reflection mechanism to call different models and methods.
 * UDL is based on MMCV which provides the following functionalities.
-* UDL is based on NNI to peform automatic machine learning.
-
+* UDL is based on NNI to perform automatic machine learning.
 
 
 
