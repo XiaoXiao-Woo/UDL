@@ -1,11 +1,10 @@
-# UDL (Make Available on PyPI :tada:)
+# UDL (Make Available on [PyPI](https://pypi.org/project/udl-vis/) :tada:)
 
-UDL is a unified pytorch framework for vision research:
+UDL is a unified Pytorch framework for vision research:
 
-* UDL has faster library loading speed and more convenient reflection mechanism to call different models and methods.
+* UDL has a faster library loading speed and a more convenient reflection mechanism to call different models and methods.
 * UDL is based on MMCV which provides the following functionalities.
-* UDL is based on NNI to peform automatic machine learning.
-
+* UDL is based on NNI to perform automatic machine learning.
 
 
 
@@ -18,7 +17,7 @@ See the [repo](https://github.com/liangjiandeng/PanCollection) for more detailed
 For the implementation of DCFNet as described in the ICCV paper "Dynamic Cross Feature Fusion for Remote Sensing Pansharpening," please refer to the [branch](https://github.com/XiaoXiao-Woo/UDL/blob/UDL_DCFNet) in the this repository.
 
 ## Requirements
-* Python3.7+, Pytorch>=1.6.0
+* Python3.7+, Pytorch>=1.9.0
 * NVIDIA GPU + CUDA
 * Run `python setup.py develop`
 
@@ -26,7 +25,11 @@ Note: Our project is based on MMCV, but you needn't to install it currently.
 
 ## Quick Start
 
-> pip install -i udl-vis https://pypi.org/simple
+> pip install udl-vis -i https://pypi.org/simple
+
+Also, you can quick start from PanCollection, which is remote sensing pansharpening and is one of our applications.
+
+> pip install pancollection -i https://pypi.org/simple
 
 ### Quick Start for developer
 
