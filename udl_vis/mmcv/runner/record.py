@@ -143,6 +143,9 @@ class SmoothedValue(object):
         self.total = 0
         self.count = 0
 
+    def store(self, tensor):
+        self.image = tensor
+
     def update(self, value, n=1):
         self.deque.append(value)
         self.val = value
@@ -246,8 +249,11 @@ class MetricLogger(object):
                 v = torch.mean(v)
                 if hasattr(v, 'item'):
                     v = v.item()
-            assert isinstance(v, (float, int, str)), print("type: ", type(v))
-            self.meters[k].update(v, n)
+            # assert isinstance(v, (float, int, str)), print("type: ", type(v))
+            if isinstance(v, (float, int, str)):
+                self.meters[k].update(v, n)
+            elif isinstance(v, np.ndarray):
+                self.meters[k].store(v)
 
     def __getattr__(self, attr):
         if attr in self.meters:

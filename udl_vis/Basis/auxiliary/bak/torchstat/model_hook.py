@@ -10,13 +10,12 @@ from . import compute_memory
 
 
 class ModelHook(object):
-    def __init__(self, model, input_size, device="cuda", keep_pair=False, ignore_flops=False): # , debug_layers=[]
+    def __init__(self, model, input_size, device="cuda", keep_pair=False): # , debug_layers=[]
         assert isinstance(model, nn.Module)
         assert isinstance(input_size, (list, tuple))
         self.leaf_modules = []
         # self.debug_layers = debug_layers
         self._model = model
-        self.ignore_flops = ignore_flops
         self._input_size = input_size
         self._origin_call = dict()  # sub module call hook
         self.hooks = []
@@ -30,7 +29,6 @@ class ModelHook(object):
 
         if device == "cuda" and torch.cuda.is_available():
             dtype = torch.cuda.FloatTensor
-            # model.cuda()
         else:
             dtype = torch.FloatTensor
         x = [torch.rand(*in_size).type(dtype) for in_size in input_size]
@@ -64,12 +62,6 @@ class ModelHook(object):
         def wrap_call(module, *input, **kwargs):
             assert module.__class__ in self._origin_call
             # Itemsize for memory
-            # if isinstance(input[0], (tuple, list)):
-            #     try:
-            #         itemsize = np.prod([inp[0].detach().numpy().itemsize for inp in input[0]])
-            #     except:
-            #         itemsize = np.prod([inp[0].detach().cpu().numpy().itemsize for inp in input[0]])
-            # else:
             try:
                 itemsize = input[0].detach().numpy().itemsize
             except:
@@ -81,7 +73,11 @@ class ModelHook(object):
             module.duration = torch.from_numpy(
                 np.array([end - start], dtype=np.float32))
             # c, h, w
-            # print(type(module).__name__)
+            module.input_shape = torch.from_numpy(
+                np.array(input[0].size()[1:], dtype=np.int32))
+            module.output_shape = torch.from_numpy(
+                np.array(output.size()[1:], dtype=np.int32))
+            # print(module.name)
             parameter_quantity = 0
             inference_memory = 1
             madd = 0
@@ -136,54 +132,36 @@ class ModelHook(object):
             #     c = c // 2
             #     parameter_quantity += c * c // 2
             # print(f"log: {module.__class__.__name__:}")
-            # if hasattr(module, 'flops'):
-            #     # print(module)
-            #     shape = list(input[0].size())
-            #     shape = shape[1:] if shape[0] == 1 else shape
-            #     assert isinstance(shape, (list, tuple))
-            #     module.input_shape = torch.from_numpy(
-            #         np.array(shape, dtype=np.int32))
-            #     module.parameter_quantity = torch.from_numpy(
-            #         np.array([parameter_quantity], dtype=np.long))
-            #     module.__class__.__name__ = module.__class__.__name__ + "_flops"
-            #     # try:
-            #     flops += module.flops(*input, output)
-            #     # except:
-            #     #     print(f"error: {module.__class__.__name__}, {module}")
-            # else:
-            
-                # shape = list(input[0].size())
-                # shape = shape[1:] if shape[0] == 1 else shape
-                # assert isinstance(shape, (list, tuple))
-            # memory += parameters_number  # exclude parameter memory
-            for name, p in module._parameters.items():
-                parameter_quantity += (0 if p is None else torch.numel(p.data))
-            module.parameter_quantity = torch.from_numpy(
-                np.array([parameter_quantity], dtype=np.long))
-
-            if len(output) == 1 or not isinstance(output, tuple):
-                module.output_shape = torch.from_numpy(
-                    np.array(output[0].size()[1:], dtype=np.int32))
+            if hasattr(module, 'flops'):
+                # print(module)
+                module.input_shape = torch.from_numpy(
+                    np.array(input[0][0].permute(0, 2, 1).size(), dtype=np.int32))
+                module.parameter_quantity = torch.from_numpy(
+                    np.array([parameter_quantity], dtype=np.long))
+                module.__class__.__name__ = module.__class__.__name__ + "_flops"
+                # try:
+                flops += module.flops(*input, output)
+                # except:
+                #     print(f"error: {module.__class__.__name__}, {module}")
+            else:
                 for s in output.size()[1:]:
                     inference_memory *= s
-            else:
-                print(" Only show first output's shape.", sep='')
-                module.output_shape = torch.from_numpy(
-                    np.array(output[0][0].size()[1:], dtype=np.int32))
+                # memory += parameters_number  # exclude parameter memory
+                for name, p in module._parameters.items():
+                    parameter_quantity += (0 if p is None else torch.numel(p.data))
+                module.parameter_quantity = torch.from_numpy(
+                    np.array([parameter_quantity], dtype=np.long))
 
-            if len(input) == 1 or not isinstance(input, tuple):
-                module.input_shape = torch.from_numpy(
-                    np.array(input[0].size()[1:], dtype=np.int32))
-                madd = compute_madd(module, input[0], output)
-                flops = compute_flops(module, input[0], output)
-                Memory = compute_memory(module, input[0], output)
-            else:
-                print(" Only show first input's shape.", sep='')
-                module.input_shape = torch.from_numpy(
-                    np.array(input[0][0].size()[1:], dtype=np.int32))
-                madd = compute_madd(module, input, output)
-                flops = compute_flops(module, input, output)
-                Memory = compute_memory(module, input, output)
+                if len(input) == 1:
+                    madd = compute_madd(module, input[0], output)
+                    flops = compute_flops(module, input[0], output)
+                    Memory = compute_memory(module, input[0], output)
+                # elif len(input) > 1:
+                #     madd = compute_madd(module, input, output)
+                #     flops = compute_flops(module, input, output)
+                #     Memory = compute_memory(module, input, output)
+                else:
+                    raise ValueError(f"{len(input)} is not one or more")
 
             inference_memory = inference_memory * 4 / (1024 ** 2)  # shown as MB unit
             module.inference_memory = torch.from_numpy(
@@ -201,7 +179,6 @@ class ModelHook(object):
 
         for name, module in self._model.named_modules():
             num_children = len(list(module.children()))
-            # print(name, module.__class__.__name__, num_children)
             if num_children == 0:
                 module.name = name
                 leaf_modules.append((name, module))
@@ -209,14 +186,14 @@ class ModelHook(object):
                     # 只记录一类与具体实例无关的__call__
                     self._origin_call[module.__class__] = module.__class__.__call__
                     module.__class__.__call__ = wrap_call
-            elif name != '' and num_children > 0 and hasattr(module, 'flops') and not self.ignore_flops:#any([L in module.__class__.__name__ for L in self.debug_layers]):
+            elif name != '' and num_children > 0 and hasattr(module, 'flops'):#any([L in module.__class__.__name__ for L in self.debug_layers]):
                 #name in self.debug_layers:# module.__class__.__name__  in self.debug_layers
                 # if module.__class__.__name__ in self.debug_layers:
                 leaf_modules.append((name, module))
                 if module.__class__ not in self._origin_call:
                     self._origin_call[module.__class__] = module.__class__.__call__
                     module.__class__.__call__ = wrap_call
-                    
+                    print(name, module.__class__.__name__)
 
         # for module in self._model.modules():
         #     if len(list(module.children())) == 0 and module.__class__ not in self._origin_call:

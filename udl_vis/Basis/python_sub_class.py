@@ -100,8 +100,72 @@ class TaskDispatcher(Config):
 
         return cls(**kwargs)
 
+# class ModelDispatcher(object):
+#     _task = dict()
+# 
+#     def __init_subclass__(cls, name='', **kwargs):
+#         super().__init_subclass__(**kwargs)
+#         if name != '':
+#             cls._task[name] = cls
+#             cls._name = name
+#             # print(cls.__repr__, cls..__repr__)
+#         else:
+#             # warnings.warn(f'Creating a subclass of MetaModel {cls.__name__} with no name.')
+#             cls._task[cls.__name__] = cls
+#             cls._name = cls.__name__
+# 
+#     def __new__(cls, *args, **kwargs):
+#         if cls is ModelDispatcher:
+#             task = kwargs.get('task')
+#             try:
+#                 cls = cls._task[task]
+#             except KeyError:
+#                 raise ValueError(f'Got task={task} but expected'
+#                                  f'one of {cls._task.keys()}')
+# 
+#         instance = super().__new__(cls)
+# 
+#         return instance
+# 
+#     @classmethod
+#     def build_model(cls, cfg):
+# 
+#         arch = cfg.arch
+#         task = cfg.task
+#         model_style = cfg.model_style
+# 
+#         try:
+#             # 获得PansharpeningModel,进行分发
+#             cls = cls._task[task](None, None)
+#         except KeyError:
+#             raise ValueError(f'Got task={task} but expected '
+#                              f'one of {cls._task.keys()} in {cls}')
+#         try:
+#             # 获得具体的模型
+#             cls_arch = cls._models[arch]()
+#         except KeyError:
+#             raise ValueError(f'Got arch={arch} but expected '
+#                              f'one of {cls._models.keys()} in {cls}')
+# 
+#         model, criterion, optimizer, scheduler = cls_arch(cfg)
+# 
+#         if model_style is None:
+#             # 获得PansharpeningModel,model+head
+#             model_style = task
+# 
+#         if model_style is not None:
+#             try:
+#                 # 获得具体的模型
+#                 model = cls._task[model_style](model, criterion)
+#             except KeyError:
+#                 raise ValueError(f'Got model_style={model_style} but expected '
+#                                  f'one of {cls._models.keys()} (merged in _models) in {cls}')
+# 
+#         return model, criterion, optimizer, scheduler
+# 
+
 class ModelDispatcher(object):
-    _task = dict()
+    _task = dict()  # __init_subclass__调用优先级高于__init__, 无法使用self._task,可以使用cls._task
 
     def __init_subclass__(cls, name='', **kwargs):
         super().__init_subclass__(**kwargs)
@@ -128,14 +192,15 @@ class ModelDispatcher(object):
         return instance
 
     @classmethod
-    def build_model(cls, cfg):
-
+    def build_model_from_task(cls, cfg):
+        # TODO: baseline + head, structure like DETR/mmlab,
+        #  but you hardly direct know about the model structure
         arch = cfg.arch
         task = cfg.task
         model_style = cfg.model_style
 
         try:
-            # 获得PansharpeningModel,进行分发
+            #获得PansharpeningModel,进行分发
             cls = cls._task[task](None, None)
         except KeyError:
             raise ValueError(f'Got task={task} but expected '
@@ -163,3 +228,18 @@ class ModelDispatcher(object):
 
         return model, criterion, optimizer, scheduler
 
+    @classmethod
+    def build_task_from_model(cls, cfg):
+
+        arch = cfg.arch
+
+        try:
+            # 获得具体的模型
+            cls_arch = cls._task[arch]()
+        except KeyError:
+            raise ValueError(f'Got arch={arch} but expected '
+                             f'one of {cls._task.keys()} in {cls}')
+
+        model, criterion, optimizer, scheduler = cls_arch(cfg)
+
+        return model, criterion, optimizer, scheduler

@@ -56,6 +56,7 @@ class BaseRunner(metaclass=ABCMeta):
                  optimizer=None,
                  seed=None,
                  work_dir=None,
+                 tfb_dir = None,
                  logger=None,
                  meta=None,
                  max_iters=None,
@@ -116,7 +117,7 @@ class BaseRunner(metaclass=ABCMeta):
         save_dir = opt_cfg['save_dir']
         if mmcv.is_str(work_dir):
             self.work_dir = osp.abspath(work_dir)
-            self.save_dir = osp.abspath(save_dir)
+            self.save_dir = self.work_dir + "/results"
             if os.path.isdir(work_dir):
                 mmcv.mkdir_or_exist(self.save_dir)
                 # mmcv.mkdir_or_exist(self.work_dir)
@@ -125,7 +126,8 @@ class BaseRunner(metaclass=ABCMeta):
             self.save_dir = None
         else:
             raise TypeError(f'"work_dir: {work_dir}" must be a str or None')
-
+        if tfb_dir is not None:
+            self.tfb_dir = tfb_dir
 
 
 

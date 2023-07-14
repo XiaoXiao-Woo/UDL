@@ -182,11 +182,6 @@ def compute_madd(module, inp, out):
         return compute_Linear_madd(module, inp, out)
     elif isinstance(module, nn.Bilinear):
         return compute_Bilinear_madd(module, inp[0], inp[1], out)
-    elif hasattr(module, 'madd'):
-        return module.madd(inp, out)
-    elif hasattr(module, 'flops'):
-        print(f"[MAdd]: {type(module).__name__.replace('_flops', '')} is not supported!")
-        return 0
     else:
         print(f"[MAdd]: {type(module).__name__} is not supported!")
         return 0

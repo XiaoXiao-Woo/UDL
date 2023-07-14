@@ -11,8 +11,6 @@ def compute_flops(module, inp, out):
     # print(list(filter(lambda m: not m.startswith("__") and not m.endswith("__") and callable(getattr(module, m)), dir(module))))
     if isinstance(module, nn.Conv2d):
         return compute_Conv2d_flops(module, inp, out)
-    elif isinstance(module, nn.ConvTranspose2d):
-        return compute_ConvTranspose2d_flops(module, inp, out)
     elif isinstance(module, nn.BatchNorm2d):
         return compute_BatchNorm2d_flops(module, inp, out)
     elif isinstance(module, nn.LayerNorm) or 'LayerNorm' in type(module).__name__:
@@ -35,9 +33,6 @@ def compute_flops(module, inp, out):
     #     return compute_cGCN_flops(module, inp, out)
     # elif 'sGCN' == module.__class__.__name__:
     #     return compute_sGCN_flops(module, inp, out)
-    elif hasattr(module, 'flops'):
-        module.__class__.__name__ = module.__class__.__name__ + "_flops"
-        return module.flops(*inp, out) if isinstance(inp, (tuple, list)) else module.flops(inp, out)
     else:
         print(f"[Flops]: {module.__class__.__name__} is not supported!")
         return 0
@@ -105,29 +100,6 @@ def compute_Conv2d_flops(module, inp, out):
     total_flops = total_conv_flops + bias_flops
     return total_flops
 
-def compute_ConvTranspose2d_flops(module, inp, out):
-    # Can have multiple inputs, getting the first one
-    assert isinstance(module, nn.ConvTranspose2d)
-    assert len(inp.size()) == 4 and len(inp.size()) == len(out.size())
-
-    batch_size = inp.size()[0]
-    in_c = inp.size()[1]
-    k_h, k_w = module.kernel_size
-    out_c, out_h, out_w = out.size()[1:]
-    groups = module.groups
-
-    filters_per_channel = out_c // groups
-    conv_per_position_flops = k_h * k_w * in_c * filters_per_channel
-    active_elements_count = batch_size * out_h * out_w
-
-    total_conv_flops = conv_per_position_flops * active_elements_count
-
-    bias_flops = 0
-    if module.bias is not None:
-        bias_flops = out_c * active_elements_count
-    # k * k * c * H * W * o = (乘法 + 加法 + bias) * active_elements_count
-    total_flops = total_conv_flops + bias_flops
-    return total_flops
 
 def compute_BatchNorm2d_flops(module, inp, out):
     assert isinstance(module, nn.BatchNorm2d)

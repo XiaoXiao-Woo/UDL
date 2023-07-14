@@ -288,8 +288,14 @@ def showimage8(images, unnormlize=2047.0, first_channel=False):
         output = images[..., [0, 2, 4]] * torch.tensor(unnormlize)
         output = torch.clamp(output, 0, 2047)
         output = output.cpu().detach().numpy()
-
-    norm_image = linstretch(output)
+    else:
+        unnormlize = np.where(max(np.float(images.max()), 1.0) > 1.0, 1.0, unnormlize)
+        output = images[..., [0, 2, 4]] * unnormlize
+        output = np.clip(output, 0, 2047)
+    try:
+        norm_image = linstretch(output)
+    except:
+        norm_image = output
     return norm_image[:, :, ::-1]
 
 

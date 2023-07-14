@@ -16,7 +16,7 @@ def common_cfg():
     parser = argparse.ArgumentParser(description='PyTorch Training')
 
     # * Logger
-    parser.add_argument('--use_log_and_save', default=True
+    parser.add_argument('--use_log', default=True
                         , type=bool)
     parser.add_argument('--log-dir', metavar='DIR', default='logs',
                         help='path to save log')
@@ -84,6 +84,11 @@ def common_cfg():
     args.validate = False
     args.gpu_ids = [0]
     args.prefix_model = ''
+    args.use_colorlog = True
+    args.use_save= True
+    args.test = ""
+    args.code_dir = ""
+    args.start_save_epoch = 1
     # args.workflow = []
 
     return Config(args)
@@ -127,11 +132,11 @@ class get_cfg(TaskDispatcher, name='entrypoint'):
 
 
 def data_cfg(cfg):
-    if cfg.get('config', None) is not None and os.path.isfile(cfg.config):
-        print_log(f"reading {cfg.config}")
-        cfg.merge_from_dict(cfg.fromfile(cfg.config))
-    else:
-        print_log(f"reading {cfg.config} failed")
+    # if cfg.get('config', None) is not None and os.path.isfile(cfg.config):
+    #     print_log(f"reading {cfg.config}")
+    #     cfg.merge_from_dict(cfg.fromfile(cfg.config))
+    # else:
+    #     print_log(f"reading {cfg.config} failed")
 
     if cfg.get('data', None) is not None and callable(cfg.data):
         data_func = cfg.pop('data')

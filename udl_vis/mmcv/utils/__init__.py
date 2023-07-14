@@ -37,7 +37,7 @@ except ImportError:
     ]
 else:
     from .env import collect_env
-    from .logging import get_logger, print_log
+    from .logging import get_logger, print_log, create_logger
     from .parrots_jit import jit, skip_no_elena
     from .parrots_wrapper import (
         TORCH_VERSION, BuildExtension, CppExtension, CUDAExtension, DataLoader,
@@ -48,7 +48,7 @@ else:
     from .trace import is_jit_tracing
     from .hub import load_url
     __all__ = [
-        'Config', 'ConfigDict', 'DictAction', 'collect_env', 'get_logger',
+        'Config', 'ConfigDict', 'DictAction', 'collect_env', 'get_logger', 'create_logger',
         'print_log', 'is_str', 'iter_cast', 'list_cast', 'tuple_cast',
         'is_seq_of', 'is_list_of', 'is_tuple_of', 'slice_list', 'concat_list',
         'check_prerequisites', 'requires_package', 'requires_executable',

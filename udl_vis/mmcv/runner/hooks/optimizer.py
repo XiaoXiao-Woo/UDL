@@ -19,6 +19,39 @@ except ImportError:
     pass
 
 
+def clip_grads(grad_clip_value, params):
+
+    params, grad_norm = get_grad_norm(params)
+    if len(params) > 0 and grad_clip_value:
+        return clip_grad.clip_grad_norm_(params, grad_clip_value)
+    else:
+        return grad_norm
+
+def detect_anomalous_parameters(model, loss, logger):
+        parameters_in_graph = set()
+        visited = set()
+
+        def traverse(grad_fn):
+            if grad_fn is None:
+                return
+            if grad_fn not in visited:
+                visited.add(grad_fn)
+                if hasattr(grad_fn, 'variable'):
+                    parameters_in_graph.add(grad_fn.variable)
+                parents = grad_fn.next_functions
+                if parents is not None:
+                    for parent in parents:
+                        grad_fn = parent[0]
+                        traverse(grad_fn)
+
+        traverse(loss.grad_fn)
+        for n, p in model.named_parameters():
+            if p not in parameters_in_graph and p.requires_grad:
+                logger.log(
+                    level=logging.ERROR,
+                    msg=f'{n} with shape {p.size()} is not '
+                    f'in the computational graph \n')
+
 @HOOKS.register_module()
 class OptimizerHook(Hook):
     """A hook contains custom operations for the optimizer.

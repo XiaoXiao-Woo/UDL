@@ -15,7 +15,7 @@ if __name__ == '__main__':
         author="XiaoXiao-Woo",
         author_email="wxwsx1997@gmail.com",
         url='https://github.com/XiaoXiao-Woo/PanCollection',
-        version='0.3.5',
+        version='0.3.6',
         packages=find_packages(),
         license='GPLv3',
         python_requires='>=3.7',

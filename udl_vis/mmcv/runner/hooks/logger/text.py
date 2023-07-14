@@ -162,12 +162,12 @@ class TextLoggerHook(LoggerHook):
                 # statistic memory
                 if torch.cuda.is_available():
                     log_str += f'memory: {log_dict["memory"]}MB, '
-                if self.status_end_of_n_inner_iters:
-                    new_opt_param_groups = np.sum([param.cpu().detach().numpy().sum() for param in
-                                        runner.optimizer.param_groups[0]['params']])
-                    new_opt_state = np.sum([param.cpu().detach().numpy().sum() for _, v in
-                                        runner.optimizer.state.items()  for param in list(v.values())])
-                    log_str += f"opt_param_groups: {new_opt_param_groups}, opt_state: {new_opt_state} "
+                # if self.status_end_of_n_inner_iters:
+                #     new_opt_param_groups = np.sum([param.cpu().detach().numpy().sum() for param in
+                #                         runner.optimizer.param_groups[0]['params']])
+                #     new_opt_state = np.sum([param.cpu().detach().numpy().sum() for _, v in
+                #                         runner.optimizer.state.items()  for param in list(v.values())])
+                #     log_str += f"opt_param_groups: {new_opt_param_groups}, opt_state: {new_opt_state} "
         else:
             # val/test time
             # here 1000 is the length of the val dataloader
@@ -188,6 +188,8 @@ class TextLoggerHook(LoggerHook):
                     'mode', 'Epoch', 'iter', 'lr', 'time', 'data_time',
                     'memory', 'epoch', 'inner_iter'
             ]:
+                continue
+            if isinstance(val, np.ndarray):
                 continue
             if isinstance(val, float):
                 val = f'{val:.5f}'
@@ -243,11 +245,11 @@ class TextLoggerHook(LoggerHook):
             if torch.cuda.is_available():
                 log_dict['memory'] = self._get_max_memory(runner)
 
-        runner.metrics = {k: meter.avg for k, meter in runner.log_buffer.meters.items()}
+        runner.metrics = {k: meter.avg if not hasattr(meter, 'image') else meter.image for k, meter in runner.log_buffer.meters.items()}
         log_dict = dict(log_dict, **runner.metrics) #output
-        if self.status_end_of_n_inner_iters:
-            values = [np.mean(v['exp_avg'].cpu().numpy()) for k, v in runner.optimizer.state_dict()['state'].items()]
-            log_dict.update(opt=np.mean(values))
+        # if self.status_end_of_n_inner_iters:
+        #     values = [np.mean(v['exp_avg'].cpu().numpy()) for k, v in runner.optimizer.state_dict()['state'].items()]
+        #     log_dict.update(opt=np.mean(values))
 
 
         self._log_info(log_dict, runner)

@@ -186,7 +186,7 @@ class ModelCheckpoint(Hook):
     _default_less_keys = ['loss', 'sam', 'ergas']
 
     def __init__(self, indicator: str, formatter_filename="model_best_{epoch},{best_metric}", save_interval=1,
-                 save_top_k: int = 1, use_log_and_save=True,
+                 save_top_k: int = 1, use_save=True, start_save_epoch=1,
                  greater_keys=None, less_keys=None, best_prec1=None, best_epoch=0, sync_buffer=False):
         '''
         Args:
@@ -197,14 +197,14 @@ class ModelCheckpoint(Hook):
                         Please note that the monitors are checked every ``every_n_epochs`` epochs.
             Returns:
         '''
-        self.use_log_and_save = use_log_and_save
+        self.use_save = use_save
         self.best_epoch = best_epoch
         self.save_interval = save_interval
         self.save_top_k = save_top_k
         self.sync_buffer = sync_buffer
         self.indicator = 'top-1' if indicator == 'top' else indicator
         self.formatter_filename = formatter_filename
-
+        self.start_save_epoch = start_save_epoch
         # indicator_lc = indicator.lower()
 
         if greater_keys is None:
@@ -256,7 +256,8 @@ class ModelCheckpoint(Hook):
             allreduce_params(runner.model.buffers())
         metrics = runner.metrics  # metrics = {k: meter.avg for k, meter in runner.log_buffer.meters.items()}
         runner.earlyStop = self.earlyStopping(metrics.get('grad_norm', 0))
-        self.save_checkpoint(runner, metrics)
+        if runner.epoch + 1 >= self.start_save_epoch:
+            self.save_checkpoint(runner, metrics)
 
         # print_log(' * Best training metrics so far@ {best_metric} in epoch {best_epoch}'.format(
         #     best_metric=metrics['best_metric'], best_epoch=metrics['best_epoch']), logger=runner.logger)
@@ -270,7 +271,7 @@ class ModelCheckpoint(Hook):
         # meta.update(epoch=meta.pop('epoch') + 1, iter=meta.pop('iter'))
         filepath = os.path.join(out_dir, filename)
         # save_checkpoint(meta.pop('model'), filepath, optimizer=meta.pop('optimizer'), meta=meta)
-        if self.use_log_and_save:
+        if self.use_save:
             save_checkpoint(filepath, meta=meta)
             if create_symlink and is_best:
                 dst_file = os.path.join(out_dir, f'model_best_{filename}')
@@ -284,6 +285,7 @@ class ModelCheckpoint(Hook):
         flag = False
         epoch =  runner.epoch + 1
         iter = runner.iter + 1
+
         if not hasattr(runner.model, 'train') and isinstance(runner.model.model, dict):
             flag = True
             stats = {}
@@ -382,7 +384,7 @@ class ModelCheckpoint(Hook):
                     outs = [self.formatter_filename.format(**line) + "\n" for line in best_k_model]
                     f.writelines(outs)
             else:
-                if not flag and self.use_log_and_save:
+                if not flag and self.use_save:
                     with open(self.ckpt, 'a') as f:
                         outs = self.formatter_filename.format(**stats) + "\n"
                         f.writelines(outs)

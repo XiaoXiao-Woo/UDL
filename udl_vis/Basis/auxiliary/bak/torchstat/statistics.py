@@ -50,7 +50,7 @@ def convert_leaf_modules_to_stat_tree(leaf_modules):
 
 
 class ModelStat(object):
-    def __init__(self, model, input_size, query_granularity=1, device="cuda", keep_pair=False, ignore_flops=False): # , debug_layers=[]
+    def __init__(self, model, input_size, query_granularity=1, device="cuda", keep_pair=False): # , debug_layers=[]
         assert isinstance(model, nn.Module)
         # assert isinstance(input_size, (tuple, list)) and len(input_size) == 3
         self._model = model
@@ -59,10 +59,9 @@ class ModelStat(object):
         # self.debug_layers = debug_layers
         self.keep_pair = keep_pair
         self.device = device
-        self.ignore_flops = ignore_flops
 
     def _analyze_model(self):
-        model_hook = ModelHook(self._model, self._input_size, self.device, self.keep_pair, self.ignore_flops) # , debug_layers=self.debug_layers
+        model_hook = ModelHook(self._model, self._input_size, self.device, self.keep_pair) # , debug_layers=self.debug_layers
         leaf_modules = model_hook.retrieve_leaf_modules()
         stat_tree = convert_leaf_modules_to_stat_tree(leaf_modules)
         collected_nodes = stat_tree.get_collected_stat_nodes(self._query_granularity) # self.debug_layers,
@@ -74,7 +73,7 @@ class ModelStat(object):
         report = report_format(collected_nodes)
         print(report)
 
-def stat(model, input_size, query_granularity=1, device="cuda", keep_pair=False, ignore_flops=False):#, debug_layers=["MSA", "SwinTEB", "XCTEB", "MSA_BNC", 'cGCN', 'sGCN']):
+def stat(model, input_size, query_granularity=1, device="cuda", keep_pair=False):#, debug_layers=["MSA", "SwinTEB", "XCTEB", "MSA_BNC", 'cGCN', 'sGCN']):
     warnings.warn("Note that for LayerNorm, the function name uses the full name")
-    ms = ModelStat(model, input_size, query_granularity, device, keep_pair, ignore_flops) #debug_layers
+    ms = ModelStat(model, input_size, query_granularity, device, keep_pair) #debug_layers
     ms.show_report()

@@ -1,9 +1,9 @@
 # Copyright (c) OpenMMLab. All rights reserved.
-from .checkpoint import CheckpointHook
+from .checkpoint import CheckpointHook, ModelCheckpoint
 from .closure import ClosureHook
 from .ema import EMAHook
 from .evaluation import DistEvalHook, EvalHook
-from .hook import HOOKS, Hook
+from .hook import HOOKS, Hook, Hook_v2
 from .iter_timer import IterTimerHook
 from .logger import (DvcliveLoggerHook, LoggerHook, MlflowLoggerHook,
                      NeptuneLoggerHook, PaviLoggerHook, TensorboardLoggerHook,
@@ -20,10 +20,12 @@ from .momentum_updater import (CosineAnnealingMomentumUpdaterHook,
                                OneCycleMomentumUpdaterHook,
                                StepMomentumUpdaterHook)
 from .optimizer import (Fp16OptimizerHook, GradientCumulativeFp16OptimizerHook,
-                        GradientCumulativeOptimizerHook, OptimizerHook)
+                        GradientCumulativeOptimizerHook, OptimizerHook,
+                        detect_anomalous_parameters, clip_grads)
 from .profiler import ProfilerHook
 from .sampler_seed import DistSamplerSeedHook
 from .sync_buffer import SyncBuffersHook
+from .nni_hook import NNIHook
 
 __all__ = [
     'HOOKS', 'Hook', 'CheckpointHook', 'ClosureHook', 'LrUpdaterHook',

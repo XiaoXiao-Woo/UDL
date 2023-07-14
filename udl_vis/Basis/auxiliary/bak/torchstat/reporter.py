@@ -10,13 +10,13 @@ def round_value(value, binary=False):
     divisor = 1024. if binary else 1000.
 
     if value // divisor**4 > 0:
-        return str(round(value / divisor**4, 2)) + 'T', str(round(value / divisor**5, 4)) + 'P'
+        return str(round(value / divisor**4, 2)) + 'T'
     elif value // divisor**3 > 0:
-        return str(round(value / divisor**3, 2)) + 'G', str(round(value / divisor**4, 4)) + 'T'
+        return str(round(value / divisor**3, 2)) + 'G'
     elif value // divisor**2 > 0:
-        return str(round(value / divisor**2, 2)) + 'M', str(round(value / divisor**3, 4)) + 'G'
+        return str(round(value / divisor**2, 2)) + 'M'
     elif value // divisor > 0:
-        return str(round(value / divisor, 2)) + 'K', str(round(value / divisor**2, 4)) + 'M'
+        return str(round(value / divisor, 2)) + 'K'
     return str(value)
 
 
@@ -78,16 +78,15 @@ def report_format(collected_nodes):
     df['MAdd'] = df['MAdd'].apply(lambda x: '{:,}'.format(x))
     df['Flops'] = df['Flops'].apply(lambda x: '{:,}'.format(x))
 
-    binary = False
     summary = str(df) + '\n'
     summary += "=" * len(str(df).split('\n')[0])
-    summary += '\n(first four is divided by 1024)\n' if binary else '\n(first four is divided by 1000)\n'
-    summary += "Total params: {} {} ({:,})\n".format(*round_value(total_parameters_quantity, binary), total_parameters_quantity)
+    summary += '\n'
+    summary += "Total params: {:,}\n".format(total_parameters_quantity)
 
     summary += "-" * len(str(df).split('\n')[0])
     summary += '\n'
     summary += "Total memory: {:.2f}MB\n".format(total_memory)
-    summary += "Total MAdd: {}MAdd {}MAdd\n".format(*round_value(total_operation_quantity, binary))
-    summary += "Total Flops: {}Flops {}Flops\n".format(*round_value(total_flops, binary))
-    summary += "Total MemR+W: {}B {}B\n".format(*round_value(total_memrw, True))
+    summary += "Total MAdd: {}MAdd\n".format(round_value(total_operation_quantity))
+    summary += "Total Flops: {}Flops\n".format(round_value(total_flops))
+    summary += "Total MemR+W: {}B\n".format(round_value(total_memrw, True))
     return summary

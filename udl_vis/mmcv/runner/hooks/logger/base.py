@@ -109,7 +109,7 @@ class LoggerHook(Hook):
 
     def get_momentum_tags(self, runner):
         tags = {}
-        momentums = runner.current_momentum()
+        momentums = self.current_momentum(runner)
         if isinstance(momentums, dict):
             for name, value in momentums.items():
                 tags[f'momentum/{name}'] = value[0]
@@ -131,6 +131,8 @@ class LoggerHook(Hook):
                 continue
             if isinstance(val, str) and not allow_text:
                 continue
+            if isinstance(val, np.ndarray):
+                print("")
             if add_mode:
                 var = f'{self.get_mode(runner)}/{var}'
             tags[var] = val

@@ -16,7 +16,8 @@ from .hooks import (HOOKS, CheckpointHook, ClosureHook, DistEvalHook,
                     GradientCumulativeOptimizerHook, Hook, IterTimerHook,
                     LoggerHook, MlflowLoggerHook, NeptuneLoggerHook,
                     OptimizerHook, PaviLoggerHook, SyncBuffersHook,
-                    TensorboardLoggerHook, TextLoggerHook, WandbLoggerHook)
+                    TensorboardLoggerHook, TextLoggerHook, WandbLoggerHook, NNIHook,
+                    detect_anomalous_parameters, clip_grads, Hook_v2)
 from .hooks.lr_updater import StepLrUpdaterHook  # noqa
 from .hooks.lr_updater import (CosineAnnealingLrUpdaterHook,
                                CosineRestartLrUpdaterHook, CyclicLrUpdaterHook,
@@ -37,7 +38,6 @@ from .optimizer import (OPTIMIZER_BUILDERS, OPTIMIZERS,
 from .priority import Priority, get_priority
 from .utils import get_host_info, get_time_str, obj_from_dict, set_random_seed
 from .record import MetricLogger
-from .hooks.nni_hook import NNIHook
 from .misc import find_latest_checkpoint
 
 __all__ = [

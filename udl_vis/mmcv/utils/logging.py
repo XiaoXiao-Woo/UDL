@@ -194,9 +194,14 @@ def setup_logger(name, final_log_file, color=True):
         #         colored("%(message)s", "green")
         #     )
         # else:
-    formatter = colorlog.ColoredFormatter(
-        '%(log_color)s- %(message)s',
-        log_colors=log_colors_config)  # 日志输出格式
+
+    if color:
+        formatter = colorlog.ColoredFormatter(
+            '%(log_color)s- %(message)s',
+            log_colors=log_colors_config)  # 日志输出格式
+    else:
+        formatter = logging.Formatter(
+            '%(message)s')
 
     # console.setFormatter(formatter)
     # logger.addHandler(console)
@@ -253,8 +258,8 @@ def get_logger(name=None, cfg=None, cfg_name=None, log_level=logging.INFO, # pha
     #         else:
     #             return None
 
-    logger = None
-    tensorboard_log_dir = None
+    logger = tensorboard_log_dir = final_output_dir = model_save_dir =None
+
     root_output_dir = Path(cfg.out_dir)
     # set up logger in root_path
     if not root_output_dir.exists():
@@ -266,55 +271,60 @@ def get_logger(name=None, cfg=None, cfg_name=None, log_level=logging.INFO, # pha
     assert isinstance(dataset, dict), print(f"{dataset}'s type is {type(dataset)}, not a dict. ")
 
     # if not dist_print:
+    if os.path.exists(cfg.resume_from) and (dataset.get('train', None) is None or cfg.eval):
+        model_save_dir = os.path.dirname(cfg.resume_from.replace('\\', '/'))
+        log_file = '{}_{}.log'.format(cfg_name, model_save_dir.split('/')[-1].split('_')[-1])
+        final_output_dir = model_save_dir
+        final_log_file = Path(model_save_dir) / log_file
 
-    if cfg.use_log_and_save:
-
-        if os.path.exists(cfg.resume_from) and (dataset.get('train', None) is None or cfg.eval):
-            model_save_dir = os.path.dirname(cfg.resume_from.replace('\\', '/'))
-            log_file = '{}_{}.log'.format(cfg_name, model_save_dir.split('/')[-1].split('_')[-1])
-            final_output_dir = model_save_dir
-            final_log_file = Path(model_save_dir) / log_file
-
+    else:
+        if cfg.eval:
+            dataset = dataset.get("test")
         else:
-            if cfg.eval:
-                dataset = dataset.get("test")
-            else:
-                dataset = dataset.get('train') if dataset.get('train', None) is not None else dataset.get('val')
-            model = cfg.arch
-            cfg_name = os.path.basename(cfg_name).split('.')[0]
-            time_str = time.strftime('%Y-%m-%d-%H-%M-%S')
+            dataset = dataset.get('train') if dataset.get('train', None) is not None else dataset.get('val')
+        model = cfg.arch
+        cfg_name_base = os.path.basename(cfg_name).split('.')[0]
+        time_str = time.strftime('%Y-%m-%d-%H-%M-%S')
 
-            # store all output except tb_log file
-            final_output_dir = root_output_dir / dataset / model / cfg_name
-            if cfg.eval:
-                model_save_tmp = os.path.dirname(cfg.resume_from).split('/')[-1]
-            else:
-                model_save_tmp = "model_{}".format(time_str)
+        # store all output except tb_log file
+        final_output_dir = root_output_dir / dataset / model / cfg_name
+        if cfg.eval:
+            model_save_tmp = os.path.dirname(cfg.resume_from).split('/')[-1]
+        else:
+            model_save_tmp = "model_{}".format(time_str)
 
-            model_save_dir = final_output_dir / model_save_tmp
+        model_save_dir = final_output_dir / model_save_tmp
 
-            print_log('=> creating {}'.format(final_output_dir))
-            final_output_dir.mkdir(parents=True, exist_ok=True)
+        print_log('=> creating {}'.format(final_output_dir))
+        if cfg.use_save:
             model_save_dir.mkdir(parents=True, exist_ok=True)
+        if cfg.use_log:
+            final_output_dir.mkdir(parents=True, exist_ok=True)
 
-            cfg_name = '{}_{}'.format(cfg_name, time_str)
-            # a logger to save results
-            log_file = '{}.log'.format(cfg_name)
-            # if cfg.eval:
-            #     final_log_file = model_save_dir / log_file
-            # else:
-            #     final_log_file = final_output_dir / log_file
-            final_log_file = final_output_dir / log_file
-            # tensorboard_log
-            tensorboard_log_dir = root_output_dir / Path(cfg.log_dir) / dataset / model / cfg_name
-            # if not dist_print:
-            print_log('=> creating tfb logs {}'.format(tensorboard_log_dir))
-            tensorboard_log_dir.mkdir(parents=True, exist_ok=True)
-        logger = setup_logger(name, final_log_file)
+        cfg_name = '{}_{}'.format(cfg_name_base, time_str)
+        # a logger to save results
+        log_file = '{}.log'.format(cfg_name)
+        # if cfg.eval:
+        #     final_log_file = model_save_dir / log_file
+        # else:
+        #     final_log_file = final_output_dir / log_file
+        final_log_file = final_output_dir / log_file
+        # tensorboard_log
+        tensorboard_log_dir = root_output_dir / Path(cfg.log_dir) / dataset / model / cfg_name
+        # if not dist_print:
+        print_log('=> creating tfb logs {}'.format(tensorboard_log_dir))
+        tensorboard_log_dir.mkdir(parents=True, exist_ok=True)
+
+    if cfg.use_log:
+        logger = setup_logger(name, final_log_file, cfg.use_colorlog)
+    if not cfg.use_save:
+        tensorboard_log_dir = model_save_dir = ""
+        return logger, final_output_dir, model_save_dir, tensorboard_log_dir
+    else:
+        return logger, str(final_output_dir), str(model_save_dir), str(
+            tensorboard_log_dir)  # logger,
 
 
-    return logger, str(final_output_dir), str(model_save_dir), str(
-        tensorboard_log_dir)  # logger,
 
 
 def print_log(msg, logger=None, level=logging.INFO, clear_logger=False):

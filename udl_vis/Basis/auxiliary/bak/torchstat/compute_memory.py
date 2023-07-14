@@ -18,11 +18,6 @@ def compute_memory(module, inp, out):
         return compute_Linear_memory(module, inp, out)
     elif isinstance(module, (nn.AvgPool2d, nn.MaxPool2d)):
         return compute_Pool2d_memory(module, inp, out)
-    elif hasattr(module, 'memory'):
-        return module.memory(inp, out)
-    elif hasattr(module, 'flops'):
-        print(f"[Memory]: {type(module).__name__.replace('_flops', '')} is not supported!")
-        return (0, 0)
     else:
         print(f"[Memory]: {type(module).__name__} is not supported!")
         return (0, 0)

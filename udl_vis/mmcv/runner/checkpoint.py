@@ -617,7 +617,7 @@ def load_checkpoint(resume_mode,
     """
     ################
     # 只从work_dir里读ckpt，用于模型的继续训练
-    if not os.path.isfile(filename):
+    if not os.path.isfile(filename) and work_dir is not None:
         resume_mode = resume_mode.lower()
         if resume_mode == 'best':
             _, best_k_fname = get_best_k_model(os.path.join(work_dir, "checkpoint"), None)

@@ -28,15 +28,16 @@ from udl_vis.mmcv.runner import (DistSamplerSeedHook, EpochBasedRunner,
 
 import inspect
 
+
 # 10s
 # from mmdet.datasets import (build_dataloader, build_dataset,
 #                             replace_ImageToTensor)
 
 def trainer(cfg, logger, build_model,
             getDataSession,
+            runner=None,
             distributed=False,
-            meta=None):
-
+            meta=None, **kwargs):
     # TODO: 对于多个model进行任务的封装的时候，放进构建器里，而不是这里？ 似乎会增加构建代价
     # TODO: 构建
     model, criterion, optimizer, scheduler = build_model(cfg.arch, cfg.task, cfg)
@@ -46,43 +47,10 @@ def trainer(cfg, logger, build_model,
     if hasattr(model, 'init_weights'):
         model.init_weights()
 
-    ############################################################
-    # 不适合多任务
-    ############################################################
-    # datasets = [build_dataset(cfg.data.train)]
-    # if len(cfg.workflow) == 2:
-    #     val_dataset = copy.deepcopy(cfg.data.val)
-    #     val_dataset.pipeline = cfg.data.train.pipeline
-    #     datasets.append(build_dataset(val_dataset))
-    # model.CLASSES = datasets[0].CLASSES
-
-    # prepare data loaders
-    # datasets = datasets if isinstance(datasets, (list, tuple)) else [datasets]
-
-    # runner_type = 'EpochBasedRunner' if 'runner' not in cfg else cfg.runner[
-    #     'type']
-    # data_loaders = [
-    #     build_dataloader(
-    #         ds,
-    #         cfg.samples_per_gpu,
-    #         cfg.workers_per_gpu,
-    #         # `num_gpus` will be ignored if distributed
-    #         num_gpus=1,
-    #         dist=distributed,
-    #         seed=args.seed,
-    #         runner_type=runner_type,
-    #         persistent_workers=cfg.data.get('persistent_workers', False))
-    #     for ds in datasets
-    # ]
-
     sess = getDataSession(cfg)
     # cfg.valid_or_test = False
     if cfg.eval:
         cfg.workflow = [('test', 1)]
-    # if not any('train' in mode for mode, _ in cfg.workflow):
-    #     cfg.eval = True
-    # if not any('valid' in mode for mode, _ in cfg.workflow):
-    #     cfg.valid_or_test = True
 
     # put model on gpus
     if distributed:
@@ -107,109 +75,116 @@ def trainer(cfg, logger, build_model,
                 model.model = MMDataParallel(model.model, device_ids=cfg.gpu_ids)
         else:
             model = MMDataParallel(model, device_ids=cfg.gpu_ids)
-
-    # 改到 build_model里，一次性设置，方便查找
-    if cfg.get('optimizer', None) is not None:
-        optimizer = build_optimizer(model.model.module, cfg.optimizer)
-
-    # 兼容argparser和配置文件的
-    if 'runner' not in cfg:
-        cfg.runner = {
-            'type': 'EpochBasedRunner',
-            'max_epochs': cfg.epochs  # argparser
-        }
-        warnings.warn(
-            'config is now expected to have a `runner` section, '
-            'please set `runner` in your config.', UserWarning)
+    if runner is not None:
+        runner = runner(cfg, model=model, optimizer=optimizer,
+                        scheduler=scheduler,
+                        logger=logger, **kwargs)
     else:
-        if 'epochs' in cfg and 'max_iters' not in cfg.runner:
-            cfg.runner['max_epochs'] = cfg.epochs
-            # assert cfg.epochs == cfg.runner['max_epochs'], print(cfg.epochs, cfg.runner['max_epochs'])
+        # 改到 build_model里，一次性设置，方便查找
+        if cfg.get('optimizer', None) is not None:
+            optimizer = build_optimizer(model.model.module, cfg.optimizer)
 
-    runner = build_runner(
-        cfg.runner,
-        default_args=dict(
-            model=model,
-            optimizer=optimizer,
-            seed=cfg.seed,
-            work_dir=cfg.work_dir,
-            logger=logger,
-            meta=meta,
-            opt_cfg={'log_interval': cfg.log_interval,
-                     'save_interval': cfg.save_interval,
-                     'accumulated_step': cfg.accumulated_step,
-                     'grad_clip': cfg.grad_clip,
-                     'dataset': cfg.dataset,
-                     'img_range': cfg.img_range,
-                     'metrics': cfg.metrics,
-                     'save_fmt': cfg.save_fmt,
-                     'mode': cfg.mode,
-                     'eval': cfg.eval,
-                     # 'val_mode': cfg.valid_or_test, # 在base_runner的resume里用于设置测试最大轮数来评估训练好的模型
-                     'save_dir': cfg.work_dir + "/results"}))
+        # 兼容argparser和配置文件的
+        if 'runner' not in cfg:
+            cfg.runner = {
+                'type': 'EpochBasedRunner',
+                'max_epochs': cfg.epochs  # argparser
+            }
+            warnings.warn(
+                'config is now expected to have a `runner` section, '
+                'please set `runner` in your config.', UserWarning)
+        else:
+            if 'epochs' in cfg and 'max_iters' not in cfg.runner:
+                cfg.runner['max_epochs'] = cfg.epochs
+                # assert cfg.epochs == cfg.runner['max_epochs'], print(cfg.epochs, cfg.runner['max_epochs'])
 
-    # an ugly workaround to make .log and .log.json filenames the same
-    # runner.timestamp = timestamp
+        runner = build_runner(
+            cfg.runner,
+            default_args=dict(
+                model=model,
+                optimizer=optimizer,
+                seed=cfg.seed,
+                work_dir=cfg.work_dir,
+                tfb_dir = cfg.tfb_dir,
+                logger=logger,
+                meta=meta,
+                opt_cfg={'log_interval': cfg.log_interval,
+                         'save_interval': cfg.save_interval,
+                         'accumulated_step': cfg.accumulated_step,
+                         'grad_clip': cfg.grad_clip,
+                         'dataset': cfg.dataset,
+                         'img_range': cfg.img_range,
+                         'metrics': cfg.metrics,
+                         'save_fmt': cfg.save_fmt,
+                         # 'mode': cfg.mode,
+                         'test': cfg.test,
+                         'eval': cfg.eval,
+                         # 'val_mode': cfg.valid_or_test, # 在base_runner的resume里用于设置测试最大轮数来评估训练好的模型
+                         'save_dir': cfg.work_dir + "/results"}))
 
-    # fp16 setting
-    fp16_cfg = cfg.get('fp16', None)
-    if fp16_cfg is not None:
-        optimizer_config = Fp16OptimizerHook(
-            **cfg.optimizer_config, **fp16_cfg, distributed=distributed)
-    elif distributed and 'type' not in cfg.optimizer_config:
-        optimizer_config = OptimizerHook(**cfg.optimizer_config)
-    else:
-        optimizer_config = cfg.get('optimizer_config', None)
+        # an ugly workaround to make .log and .log.json filenames the same
+        # runner.timestamp = timestamp
 
-    ############################################################
-    # register training hooks
-    ############################################################
-    if cfg.get('config', None) is not None and os.path.isfile(cfg.config):
-        '''
-        optimizer = dict(type='SGD', lr=0.1, momentum=0.9, weight_decay=0.0001)
-        optimizer_config = dict(grad_clip=None)
-        lr_config = dict(policy='step', step=[100, 150])
-        checkpoint_config = dict(interval=1)
-        log_config = dict(
-            interval=100,
-            hooks=[
-                dict(type='TextLoggerHook'),
-                # dict(type='TensorboardLoggerHook')
-            ])
-        '''
-        runner.register_training_hooks(
-            cfg.lr_config,
-            optimizer_config,
-            cfg.checkpoint_config,
-            cfg.log_config,
-            cfg.get('momentum_config', None),
-            custom_hooks_config=cfg.get('custom_hooks', None))
+        # fp16 setting
+        fp16_cfg = cfg.get('fp16', None)
+        if fp16_cfg is not None:
+            optimizer_config = Fp16OptimizerHook(
+                **cfg.optimizer_config, **fp16_cfg, distributed=distributed)
+        elif distributed and 'type' not in cfg.optimizer_config:
+            optimizer_config = OptimizerHook(**cfg.optimizer_config)
+        else:
+            optimizer_config = cfg.get('optimizer_config', None)
+
+        ############################################################
+        # register training hooks
+        ############################################################
+        if cfg.get('config', None) is not None and os.path.isfile(cfg.config):
+            '''
+            optimizer = dict(type='SGD', lr=0.1, momentum=0.9, weight_decay=0.0001)
+            optimizer_config = dict(grad_clip=None)
+            lr_config = dict(policy='step', step=[100, 150])
+            checkpoint_config = dict(interval=1)
+            log_config = dict(
+                interval=100,
+                hooks=[
+                    dict(type='TextLoggerHook'),
+                    # dict(type='TensorboardLoggerHook')
+                ])
+            '''
+            runner.register_training_hooks(
+                cfg.lr_config,
+                optimizer_config,
+                cfg.checkpoint_config,
+                cfg.log_config,
+                cfg.get('momentum_config', None),
+                custom_hooks_config=cfg.get('custom_hooks', None))
 
 
-    elif cfg.get('log_config', None) is None and len(cfg.workflow) and cfg.workflow[0][0] != 'simple_train':
-        # 提供time, data_time, memory等，并且用于mode里区别IterBasedRunner? 在train模式下提供了有无time的区别
-        if cfg.mode == 'nni':
-            runner.register_custom_hooks({'type': 'NNIHook', 'priority': 'very_low'})
-        if scheduler is not None:
-            runner.register_lr_hook(dict(policy=scheduler.__class__.__name__[:-2], step=scheduler.step_size))
-        runner.register_checkpoint_hook(
-            dict(type='ModelCheckpoint', indicator='loss', save_top_k=cfg.save_top_k,
-                 use_log_and_save=cfg.use_log_and_save, save_interval=cfg.save_interval))
-        runner.register_optimizer_hook(dict(grad_clip=cfg.grad_clip))  # ExternOptimizer
-        runner.register_timer_hook(dict(type='IterTimerHook'))
-        log_config = [dict(type='TextLoggerHook')]
-        if cfg.use_tfb:
-            log_config.append(dict(type='TensorboardLoggerHook'))
-        runner.register_logger_hooks(dict(
-            interval=cfg.log_interval,
-            hooks=log_config))
+        elif cfg.get('log_config', None) is None and len(cfg.workflow) and cfg.workflow[0][0] != 'simple_train':
+            # 提供time, data_time, memory等，并且用于mode里区别IterBasedRunner? 在train模式下提供了有无time的区别
+            if cfg.mode == 'nni':
+                runner.register_custom_hooks({'type': 'NNIHook', 'priority': 'very_low'})
+            if scheduler is not None:
+                runner.register_lr_hook(dict(policy=scheduler.__class__.__name__[:-2], step=scheduler.step_size))
+            runner.register_checkpoint_hook(
+                dict(type='ModelCheckpoint', indicator='loss', save_top_k=cfg.save_top_k,
+                     use_save=cfg.use_save, save_interval=cfg.save_interval, start_save_epoch=cfg.start_save_epoch))
+            runner.register_optimizer_hook(dict(grad_clip=cfg.grad_clip))  # ExternOptimizer
+            runner.register_timer_hook(dict(type='IterTimerHook'))
+            log_config = [dict(type='TextLoggerHook')]
+            if cfg.use_tfb:
+                log_config.append(dict(type='TensorboardLoggerHook'))
+            runner.register_logger_hooks(dict(
+                interval=cfg.log_interval,
+                hooks=log_config))
 
-    else:
-        runner.register_checkpoint_hook(dict(type='ModelCheckpoint', indicator='loss'))
+        else:
+            runner.register_checkpoint_hook(dict(type='ModelCheckpoint', indicator='loss'))
 
-    if distributed:
-        if isinstance(runner, EpochBasedRunner):
-            runner.register_hook(DistSamplerSeedHook())
+
+        if distributed:
+            if isinstance(runner, EpochBasedRunner):
+                runner.register_hook(DistSamplerSeedHook())
 
     ############################################################
     # register validate hooks
@@ -262,13 +237,13 @@ def trainer(cfg, logger, build_model,
 
             eval_cfg = cfg.get('evaluation', {})
             eval_cfg['by_epoch'] = cfg.runner['type'] != 'IterBasedRunner'
-            from udl_vis.mmcv.runner import EvalHook, DistEvalHook
-            eval_hook = DistEvalHook if distributed else EvalHook
-            # In this PR (https://github.com/open-mmlab/mmcv/pull/1193), the
-            # priority of IterTimerHook has been modified from 'NORMAL' to 'LOW'.
-            if mode != 'simple_val':
-                runner.register_hook(
-                    eval_hook(eval_loader, **eval_cfg), priority='LOW')
+            # from udl_vis.mmcv.runner import EvalHook, DistEvalHook
+            # eval_hook = DistEvalHook if distributed else EvalHook
+            # # In this PR (https://github.com/open-mmlab/mmcv/pull/1193), the
+            # # priority of IterTimerHook has been modified from 'NORMAL' to 'LOW'.
+            # if mode != 'simple_val':
+            #     runner.register_hook(
+            #         eval_hook(eval_loader, **eval_cfg), priority='LOW')
 
             data_loaders['test'] = eval_loader
             cfg.workflow[idx] = ('test', epoch)
@@ -283,7 +258,8 @@ def trainer(cfg, logger, build_model,
             cfg.workflow[idx] = ('val', epoch)
 
         if 'train' in mode:
-            train_loader, train_sampler, generator = sess.get_dataloader(cfg.dataset[mode], distributed, state_dataloader)
+            train_loader, train_sampler, generator = sess.get_dataloader(cfg.dataset[mode], distributed,
+                                                                         state_dataloader)
             # 保存generator状态用于恢复数据批次/轮次
             runner.generator = generator
             if cfg.once_epoch:
@@ -293,19 +269,21 @@ def trainer(cfg, logger, build_model,
             if len(cfg.workflow) == 0:
                 cfg.workflow.append(('simple_train', 1))
 
-
     ############################################################
     # 载入数据，运行模型
     ############################################################
     # print(inspect.getfile(model.model.__class__).split(cfg.arch)[0])
-    if cfg.use_log_and_save and not os.path.exists("/".join([cfg.work_dir, "codes"])):
-        shutil.copytree("/".join([inspect.getfile(model.model.module.__class__).split(cfg.arch)[0], cfg.arch]),
+    if not os.path.exists("/".join([cfg.work_dir, "codes"])) and os.path.isdir(cfg.code_dir):
+        # "/".join([inspect.getfile(model.model.module.__class__).split(cfg.arch)[0], cfg.arch])
+        shutil.copytree(cfg.code_dir,
                         "/".join([cfg.work_dir, "codes"]))
+
+    print_log(cfg.pretty_text, logger=logger)
 
     runner.run(data_loaders, cfg.workflow)
 
 
-def main(cfg, build_model, getDataSession):
+def main(cfg, build_model, getDataSession, runner=None, **kwargs):
     # init distributed env first, since logger depends on the dist info.
     if cfg.launcher == 'none':
         distributed = False
@@ -318,6 +296,7 @@ def main(cfg, build_model, getDataSession):
 
     logger, out_dir, model_save_dir, tfb_dir = create_logger(cfg, cfg.experimental_desc, 0)
     cfg.out_dir = cfg.work_dir = model_save_dir
+    cfg.tfb_dir = tfb_dir
     cfg.seed = init_random_seed(cfg.seed)
     print_log(f'Set random seed to {cfg.seed}', logger=logger)
 
@@ -336,5 +315,7 @@ def main(cfg, build_model, getDataSession):
         logger,
         build_model,
         getDataSession,
+        runner,
         distributed=distributed,
-        meta={})
+        meta={},
+        **kwargs)

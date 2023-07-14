@@ -77,8 +77,8 @@ class EpochBasedRunner(BaseRunner):
             self.call_hook('after_train_iter')
             self._iter += 1
             # break
-        self.metrics = {k: meter.avg for k, meter in self.log_buffer.meters.items()}
         self.metrics.update(epoch_time=time.time() - tic)
+        self.metrics = {k: meter.avg for k, meter in self.log_buffer.meters.items()}
         self.call_hook('after_train_epoch')
         self._epoch += 1
 
@@ -170,7 +170,7 @@ class EpochBasedRunner(BaseRunner):
             self._inner_iter = i
             self.call_hook('before_val_iter')
             self.run_iter(data_batch, train_mode=False, idx=i,
-                          img_range=self.opt_cfg['img_range'], eval=self.opt_cfg['eval'],
+                          img_range=self.opt_cfg['img_range'], eval=self.opt_cfg['eval'], test=self.opt_cfg['test'],
                           save_fmt=self.opt_cfg['save_fmt'], filename=data_batch.get('filename', [None])[0], save_dir=self.save_dir,
                           **kwargs)
                           # val_mode=self.opt_cfg['val_mode'])
