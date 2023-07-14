@@ -2,7 +2,7 @@
 
 UDL is a unified Pytorch framework for vision research:
 
-* UDL has a faster library loading speed and a more convenient reflection mechanism to call different models and methods.
+* UDL has a faster library loading speed and a more convenient reflection mechanism to call different methods.
 * UDL is based on MMCV which provides the following functionalities.
 * UDL is based on NNI to perform automatic machine learning.
 
