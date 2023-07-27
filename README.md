@@ -56,6 +56,9 @@ Please expect more tasks and models
 
 - [ ] HISR
   - [ ] models
+
+- [ ] VIS-IR
+  - [ ] models
  
  - [ ] Improve MMCV repo to simplify expensive hooks.
 
