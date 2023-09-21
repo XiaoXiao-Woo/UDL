@@ -72,7 +72,7 @@ class TaskDispatcher(Config):
         # 需要从外部启动和从任务启动，但参数不同
         key = 'mode'
         value = kwargs.setdefault('mode', None)
-        print('111', value)
+        print(f'111, set mode="{value}" from [entrypoint, nni]')
         if value is None:
             # 第二、三调用层进入此函数
             key = 'task'

@@ -59,6 +59,8 @@ class ModelHook(object):
         module.register_buffer('duration', torch.zeros(1).float())
         module.register_buffer('Flops', torch.zeros(1).long())
         module.register_buffer('Memory', torch.zeros(2).long())
+        module.register_buffer('params_proportion', torch.zeros(1).long())
+        module.register_buffer('Flops_proportion', torch.zeros(1).long())
 
     def _sub_module_call_hook(self):
         def wrap_call(module, *input, **kwargs):
@@ -89,6 +91,10 @@ class ModelHook(object):
             Memory = (0, 0)
 
             # # iterate through parameters and count num params
+            # print(module.__class__)
+            # if 'InvBlock' == module.__class__:
+            #     print("111")
+
             # if 'XCTEB' in module.__class__.__name__:
             #     c, h, w = module.input_shape
             #     num_heads = module.num_heads
@@ -202,6 +208,8 @@ class ModelHook(object):
         for name, module in self._model.named_modules():
             num_children = len(list(module.children()))
             # print(name, module.__class__.__name__, num_children)
+            if name == '':
+                name = self._model.__class__.__name__
             if num_children == 0:
                 module.name = name
                 leaf_modules.append((name, module))
@@ -209,7 +217,7 @@ class ModelHook(object):
                     # 只记录一类与具体实例无关的__call__
                     self._origin_call[module.__class__] = module.__class__.__call__
                     module.__class__.__call__ = wrap_call
-            elif name != '' and num_children > 0 and hasattr(module, 'flops') and not self.ignore_flops:#any([L in module.__class__.__name__ for L in self.debug_layers]):
+            if num_children > 0 and (hasattr(module, 'flops') and not self.ignore_flops):#any([L in module.__class__.__name__ for L in self.debug_layers]):
                 #name in self.debug_layers:# module.__class__.__name__  in self.debug_layers
                 # if module.__class__.__name__ in self.debug_layers:
                 leaf_modules.append((name, module))

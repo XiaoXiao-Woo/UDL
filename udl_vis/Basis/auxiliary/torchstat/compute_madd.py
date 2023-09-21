@@ -53,15 +53,17 @@ def compute_LayerNorm_madd(module, inp, out):
         inp = inp.unsqueeze(0)
     if len(out.size()) == 3:
         out = out.unsqueeze(0)
-    assert len(inp.size()) == 4 and len(inp.size()) == len(out.size())
+    assert len(inp.size()) == len(out.size())
+    if len(inp.size()) == 4:
+        in_c, in_h, in_w = inp.size()[1:]
 
-    in_c, in_h, in_w = inp.size()[1:]
-
-    # 1. sub mean
-    # 2. div standard deviation
-    # 3. mul alpha
-    # 4. add beta
-    return 4 * in_h * in_w
+        # 1. sub mean
+        # 2. div standard deviation
+        # 3. mul alpha
+        # 4. add beta
+        return 4 * in_h * in_w
+    else:
+        return 0
 
 def compute_BatchNorm2d_madd(module, inp, out):
     assert isinstance(module, nn.BatchNorm2d)

@@ -36,8 +36,9 @@ def compute_flops(module, inp, out):
     # elif 'sGCN' == module.__class__.__name__:
     #     return compute_sGCN_flops(module, inp, out)
     elif hasattr(module, 'flops'):
-        module.__class__.__name__ = module.__class__.__name__ + "_flops"
-        return module.flops(*inp, out) if isinstance(inp, (tuple, list)) else module.flops(inp, out)
+        if '_flops' not in module.__class__.__name__:
+            module.__class__.__name__ = module.__class__.__name__ + "_flops"
+        return module.flops(inp, out) #if isinstance(inp, (tuple, list)) else module.flops(inp, out)
     else:
         print(f"[Flops]: {module.__class__.__name__} is not supported!")
         return 0
@@ -101,7 +102,7 @@ def compute_Conv2d_flops(module, inp, out):
     bias_flops = 0
     if module.bias is not None:
         bias_flops = out_c * active_elements_count
-    # k * k * c * H * W * o = (乘法 + 加法 + bias) * active_elements_count
+    # k * k * c * H * W * o = (乘法 + bias) * active_elements_count
     total_flops = total_conv_flops + bias_flops
     return total_flops
 
@@ -144,10 +145,12 @@ def compute_LayerNorm_flops(module, inp, out):
         inp = inp.unsqueeze(0)
     if len(out.size()) == 3:
         out = out.unsqueeze(0)
-    assert len(inp.size()) == 4 and len(inp.size()) == len(out.size())
-    flops = np.prod(inp.shape)
-
-    return flops
+    assert len(inp.size()) == len(out.size())
+    if len(inp.size()) == 4:
+        flops = np.prod(inp.shape)
+        return flops
+    else:
+        return 0
 
 def compute_ReLU_flops(module, inp, out):
     assert isinstance(module, (nn.ReLU, nn.ReLU6, nn.PReLU, nn.ELU, nn.LeakyReLU))
@@ -168,10 +171,10 @@ def compute_Pool2d_flops(module, inp, out):
 
 def compute_Linear_flops(module, inp, out):
     assert isinstance(module, nn.Linear)
-    if len(inp.size()) > 3:
-        inp = inp.reshape(inp.size(0), inp.size(1), -1)
-    if len(out.size()) > 3:
-        out = out.reshape(out.size(0), out.size(1), -1)
+    if len(inp.size()) > 2:
+        inp = inp.reshape(-1, inp.size(-1))
+    if len(out.size()) > 2:
+        out = out.reshape(-1, out.size(-1))
     batch_size = inp.size()[0]
     if len(inp.size()) == 3:# and inp.size(0) == 1:
         inp = inp[0, ...]#.squeeze(0)

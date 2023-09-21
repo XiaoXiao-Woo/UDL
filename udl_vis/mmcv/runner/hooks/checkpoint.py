@@ -186,7 +186,7 @@ class ModelCheckpoint(Hook):
     _default_less_keys = ['loss', 'sam', 'ergas']
 
     def __init__(self, indicator: str, formatter_filename="model_best_{epoch},{best_metric}", save_interval=1,
-                 save_top_k: int = 1, use_save=True, start_save_epoch=1,
+                 save_top_k: int = 1, use_save=True, start_save_epoch=1, flag_fast_train=True, earlyStopping=True,
                  greater_keys=None, less_keys=None, best_prec1=None, best_epoch=0, sync_buffer=False):
         '''
         Args:
@@ -197,6 +197,8 @@ class ModelCheckpoint(Hook):
                         Please note that the monitors are checked every ``every_n_epochs`` epochs.
             Returns:
         '''
+        self.flag_earlyStopping = earlyStopping
+        self.flag_fast_train = flag_fast_train
         self.use_save = use_save
         self.best_epoch = best_epoch
         self.save_interval = save_interval
@@ -247,9 +249,10 @@ class ModelCheckpoint(Hook):
         print_log(f'Checkpoints will be saved to {self.save_model_path}', logger=runner.logger)
 
     def earlyStopping(self, avg_grad_norm):
-
-        if avg_grad_norm > 100:
-            return True
+        if self.flag_earlyStopping:
+            if avg_grad_norm > 100:
+                return True
+        return False
 
     def after_train_epoch(self, runner):
         if self.sync_buffer:
@@ -406,7 +409,7 @@ class ModelCheckpoint(Hook):
                     # [('train', 1), ('test', 1)] 不重复测试
                     # [('train', 10), ('test', 1)], best training loss和interval的测试,有重复要去除
                     if (epoch % runner.train_interval != 0 or (runner.train_interval == 1 and runner.test_interval == 0)) \
-                            and 'test' in runner.data_loaders.keys():
+                            and 'test' in runner.data_loaders.keys() and (not self.flag_fast_train or epoch > runner.max_epochs - 200):
                         runner.epoch += 1 # 规避执行顺序: train: (save) + (epoch++) ->val/test
                         runner.val(runner.data_loaders['test'], test_mode='test')
                         runner.epoch -= 1

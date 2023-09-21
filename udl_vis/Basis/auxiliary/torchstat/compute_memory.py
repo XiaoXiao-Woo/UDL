@@ -81,12 +81,15 @@ def compute_LayerNorm_memory(module, inp, out):
         inp = inp.unsqueeze(0)
     if len(out.size()) == 3:
         out = out.unsqueeze(0)
-    assert len(inp.size()) == 4 and len(inp.size()) == len(out.size())
-    batch_size, in_c = inp.size()[:2]
-
-    mread = batch_size * (inp.size()[2:].numel() + 2 * in_c)
-    mwrite = inp.size().numel()
-    return (mread, mwrite)
+    assert len(inp.size()) == len(out.size())
+    if len(inp.size()) == 4:
+        batch_size, in_c = inp.size()[:2]
+    
+        mread = batch_size * (inp.size()[2:].numel() + 2 * in_c)
+        mwrite = inp.size().numel()
+        return (mread, mwrite)
+    else:
+        return (0, 0)
 
 def compute_Linear_memory(module, inp, out):
     assert isinstance(module, nn.Linear)

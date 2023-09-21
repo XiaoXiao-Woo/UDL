@@ -433,17 +433,17 @@ class BaseRunner(metaclass=ABCMeta):
                 # param_sum = np.sum([param.sum().cpu().numpy() for _, v in
                 #                     checkpoint['optimizer']['state'].items() for param in list(v.values())])
                 self.optimizer.load_state_dict(checkpoint['optimizer'])
-                new_opt_param_groups = np.sum([param.cpu().detach().numpy().sum() for param in
-                                    self.optimizer.param_groups[0]['params']])
-                new_opt_state = np.sum([param.cpu().detach().numpy().sum() for _, v in
-                                    self.optimizer.state.items()  for param in list(v.values())])
+                # new_opt_param_groups = np.sum([param.cpu().detach().numpy().sum() for param in
+                #                     self.optimizer.param_groups[0]['params']])
+                # new_opt_state = np.sum([param.cpu().detach().numpy().sum() for _, v in
+                #                     self.optimizer.state.items()  for param in list(v.values())])
 
                 # self.optimizer.param_groups.checkpoint['optimizer']['param_groups']
                 if lr > 0 and reset_lr:
                     for param_group in self.optimizer.param_groups:
                             param_group['lr'] = lr
                 # values = [np.mean(v['exp_avg'].cpu().numpy()) for v in self.optimizer.state_dict()['param_groups']] #.items()
-                print_log(f"loaded checkpoint.optimizer, opt={new_opt_param_groups}, {new_opt_state}", logger=self.logger) #
+                # print_log(f"loaded checkpoint.optimizer, opt={new_opt_param_groups}, {new_opt_state}", logger=self.logger) #
             elif isinstance(self.optimizer, dict):
                 for k in self.optimizer.keys():
                     self.optimizer[k].load_state_dict(

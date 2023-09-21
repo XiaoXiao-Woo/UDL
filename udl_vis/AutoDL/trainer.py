@@ -168,7 +168,8 @@ def trainer(cfg, logger, build_model,
                 runner.register_lr_hook(dict(policy=scheduler.__class__.__name__[:-2], step=scheduler.step_size))
             runner.register_checkpoint_hook(
                 dict(type='ModelCheckpoint', indicator='loss', save_top_k=cfg.save_top_k,
-                     use_save=cfg.use_save, save_interval=cfg.save_interval, start_save_epoch=cfg.start_save_epoch))
+                     use_save=cfg.use_save, save_interval=cfg.save_interval, earlyStopping=cfg.earlyStopping,
+                     start_save_epoch=cfg.start_save_epoch, flag_fast_train=cfg.flag_fast_train))
             runner.register_optimizer_hook(dict(grad_clip=cfg.grad_clip))  # ExternOptimizer
             runner.register_timer_hook(dict(type='IterTimerHook'))
             log_config = [dict(type='TextLoggerHook')]

@@ -279,7 +279,7 @@ def get_logger(name=None, cfg=None, cfg_name=None, log_level=logging.INFO, # pha
 
     else:
         if cfg.eval:
-            dataset = dataset.get("test")
+            dataset = dataset.get("test") if dataset.get("test", None) is not None else dataset.get('val')
         else:
             dataset = dataset.get('train') if dataset.get('train', None) is not None else dataset.get('val')
         model = cfg.arch

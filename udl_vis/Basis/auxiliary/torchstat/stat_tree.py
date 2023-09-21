@@ -1,5 +1,7 @@
 import queue
 
+import numpy as np
+
 
 class StatTree(object):
     def __init__(self, root_node):
@@ -22,27 +24,38 @@ class StatTree(object):
             for child in node.children:
                 q.put(child)
 
-    def get_collected_stat_nodes(self, query_granularity): #debug_layers
+    def get_collected_stat_nodes(self, query_granularity):  # debug_layers
         self.update_stat_nodes_granularity()
 
         collected_nodes = []
         stack = list()
         stack.append(self.root_node)
+
         while len(stack) > 0:
             node = stack.pop()
+
             # if node.mtype == "PanFormerEncoderLayer":
             #     print(node.mtype)
             # if any([L in node.mtype for L in debug_layers]): #node.name
+            if node.depth>1:
+                node.count_total_params_flops()
             if 'flops' in node.mtype:
                 node.mtype = node.mtype.replace("_flops", '')
                 # print(node.mtype)
-                collected_nodes.append(node)
+                if node.depth > query_granularity:
+                    collected_nodes.append(node)
+            # if node.depth > 1:
+            #     node.params_proportion = 0
+            #     node.Flops_proportion = 0
             for child in reversed(node.children):
+                # node.params_proportion += child.parameter_quantity
+                # node.Flops_proportion += child.Flops
                 stack.append(child)
             if node.depth == query_granularity:
                 collected_nodes.append(node)
             if node.depth < query_granularity <= node.granularity:
                 collected_nodes.append(node)
+
         return collected_nodes
 
 
@@ -59,11 +72,51 @@ class StatNode(object):
         self._Flops = 0
         self._duration = 0
         self._duration_percent = 0
+        self._params_proportion = 0
+        self._Flops_proportion = 0
 
         self._granularity = 1
         self._depth = 1
         self.parent = parent
         self.children = list()
+
+    def count_total_params_flops(self):
+        total_params = 0
+        total_flops = 0
+        stack = []
+        stack.append(self)
+
+        if self.parent is None:
+            while len(stack) > 0:
+                node = stack.pop()
+                for child in node.children:
+                    stack.append(child)
+                    total_params += child._parameter_quantity
+                    total_flops += child._Flops
+            self.root_total_params = total_params
+            self.root_total_flops = total_flops
+            self.p_total_params = total_params
+            self.p_total_flops = total_flops
+        else:
+            for child in self.children:
+                total_params += child._parameter_quantity
+                total_flops += child._Flops
+            self.p_total_flops = total_flops
+            self.p_total_params = total_params
+
+
+        for child in self.children:
+            child.root_total_flops = self.root_total_flops
+            child.root_total_params = self.root_total_params
+
+        # if self.parent is None:
+        #     for child in self.children:
+        #         child.root_total_flops = total_flops
+        #         child.root_total_params = total_params
+        # else:
+        #     for child in self.children:
+        #         child.p_total_flops = total_flops
+        #         child.p_total_params = total_params
 
     @property
     def name(self):
@@ -128,6 +181,41 @@ class StatNode(object):
         #     total_parameter_quantity += child.parameter_quantity
         return total_parameter_quantity
 
+    @property
+    def params_proportion(self):
+        # total_parameter_quantity = 0
+        # for child in self.parent.children:
+        #     total_parameter_quantity += child._parameter_quantity
+        # if hasattr(self.parent, 'root_total_params'):
+        #     return (self._parameter_quantity / self.parent.root_total_params) * 100
+        # elif hasattr(self.parent, 'p_total_params'):
+        #     return (self._parameter_quantity / self.parent.p_total_params) * 100
+        # else:
+        #     return np.Inf
+
+        try:
+            return int((self._parameter_quantity / self.root_total_params)* 100), int((self._parameter_quantity / self.parent.p_total_params) * 100)
+        except:
+            return np.Inf
+
+    @property
+    def Flops_proportion(self):
+        # total_Flops = 0
+        # for child in self.parent.children:
+        #     total_Flops += child.Flops
+
+        # if hasattr(self.parent, 'root_total_flops'):
+        #     return (self._Flops / self.parent.root_total_flops) * 100
+        # elif hasattr(self.parent, 'p_total_flops'):
+        #     return (self._Flops / self.parent.p_total_flops) * 100
+        # else:
+        #     return np.Inf
+
+        try:
+            return int((self._Flops / self.parent.root_total_flops) * 100), int((self._Flops / self.parent.p_total_flops) * 100)
+        except:
+            return np.Inf
+
     @parameter_quantity.setter
     def parameter_quantity(self, parameter_quantity):
         assert parameter_quantity >= 0
@@ -172,7 +260,7 @@ class StatNode(object):
         # for child in self.children:
         #     total_Memory[0] += child.Memory[0]
         #     total_Memory[1] += child.Memory[1]
-            # print(total_Memory)
+        # print(total_Memory)
         return total_Memory
 
     @Memory.setter

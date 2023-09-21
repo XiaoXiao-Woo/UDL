@@ -26,7 +26,7 @@ def convert_leaf_modules_to_stat_tree(leaf_modules):
     create_index = 1
     root_node = StatNode(name='root', parent=None)
     for leaf_module_name, leaf_module in leaf_modules.items():
-        # if 'model.body.decoder.layers.0.self_attn' in leaf_module_name:
+        # if 'HSI_Fusion' == leaf_module_name:
         #     print("111", leaf_module_name, leaf_module.__class__.__name__)
         names = leaf_module_name.split('.')
         for i in range(len(names)):
@@ -36,16 +36,20 @@ def convert_leaf_modules_to_stat_tree(leaf_modules):
             node = StatNode(name=stat_node_name, mtype=leaf_module.__base__ if hasattr(leaf_module, '__base__') else leaf_module.__class__.__name__, parent=parent_node)#.__class__.__name__
             parent_node.add_child(node)
             if i == len(names) - 1:  # leaf module itself
-                input_shape = leaf_module.input_shape.numpy().tolist()
-                output_shape = leaf_module.output_shape.numpy().tolist()
-                node.input_shape = input_shape
-                node.output_shape = output_shape
-                node.parameter_quantity = leaf_module.parameter_quantity.numpy()[0]
-                node.inference_memory = leaf_module.inference_memory.numpy()[0]
-                node.MAdd = leaf_module.MAdd.numpy()[0]
-                node.Flops = leaf_module.Flops.numpy()[0]
-                node.duration = leaf_module.duration.numpy()[0]
-                node.Memory = leaf_module.Memory.numpy().tolist()
+                try:
+                    input_shape = leaf_module.input_shape.numpy().tolist()
+                    output_shape = leaf_module.output_shape.numpy().tolist()
+                    node.input_shape = input_shape
+                    node.output_shape = output_shape
+                    node.parameter_quantity = leaf_module.parameter_quantity.numpy()[0]
+                    node.inference_memory = leaf_module.inference_memory.numpy()[0]
+                    node.MAdd = leaf_module.MAdd.numpy()[0]
+                    node.Flops = leaf_module.Flops.numpy()[0]
+                    node.duration = leaf_module.duration.numpy()[0]
+                    node.Memory = leaf_module.Memory.numpy().tolist()
+                except AttributeError as e:
+                    print(names, leaf_module)
+                    raise AttributeError(e)
     return StatTree(root_node)
 
 

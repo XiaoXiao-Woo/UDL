@@ -40,14 +40,14 @@ def report_format(collected_nodes):
         duration = node.duration
         data.append([name, input_shape, output_shape, parameter_quantity,
                      inference_memory, MAdd, duration, Flops, mread,
-                     mwrite])
+                     mwrite, node.params_proportion, node.Flops_proportion])
         properties.append(mtype)
     pd.set_option('display.max_columns', None)
     df = pd.DataFrame(data)
     df_properties = pd.DataFrame(properties)
     df.columns = ['module name', 'input shape', 'output shape',
                   'params', 'memory(MB)',
-                  'MAdd', 'duration', 'Flops', 'MemRead(B)', 'MemWrite(B)']
+                  'MAdd', 'duration', 'Flops', 'MemRead(B)', 'MemWrite(B)', 'params_proportion', 'FLops_proportion']
     df['duration[%]'] = df['duration'] / (df['duration'].sum() + 1e-7)
     df['MemR+W(B)'] = df['MemRead(B)'] + df['MemWrite(B)']
     df['type'] = df_properties
@@ -64,9 +64,9 @@ def report_format(collected_nodes):
     # Add Total row
     total_df = pd.Series([total_parameters_quantity, total_memory,
                           total_operation_quantity, total_flops,
-                          total_duration, mread, mwrite, total_memrw],
+                          total_duration, mread, mwrite, total_memrw], #df["params_proportion"].sum(), df["FLops_proportion"].sum()
                          index=['params', 'memory(MB)', 'MAdd', 'Flops', 'duration[%]',
-                                'MemRead(B)', 'MemWrite(B)', 'MemR+W(B)'],
+                                'MemRead(B)', 'MemWrite(B)', 'MemR+W(B)'], #'params[%]', 'FLops[%]'
                          name='total')
     # df_properties = pd.DataFrame(properties, columns=['type'])
     df = df.append([total_df])
@@ -90,4 +90,7 @@ def report_format(collected_nodes):
     summary += "Total MAdd: {}MAdd {}MAdd\n".format(*round_value(total_operation_quantity, binary))
     summary += "Total Flops: {}Flops {}Flops\n".format(*round_value(total_flops, binary))
     summary += "Total MemR+W: {}B {}B\n".format(*round_value(total_memrw, True))
+
+    # print(data['params_proportion'])
+    
     return summary

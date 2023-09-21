@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 from torch import nn
 import torch.optim as optim
@@ -34,7 +35,7 @@ class lr_scheduler(object):
         # self.scheduler = []
         if lr_scheduler == torch.optim.lr_scheduler.StepLR:
             # 等间距阶段式衰减
-            self.lr_scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.1)
+            self.lr_scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=list(range(100, 300, 10)), gamma=0.95)
         elif lr_scheduler == optim.lr_scheduler.ReduceLROnPlateau:
             # Reduce learning rate when validation accuarcy plateau.
             self.lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='max', patience=5, verbose=True)
@@ -126,7 +127,7 @@ class lr_scheduler(object):
             self.adjust_1_learning_rate(epoch)
         else:
             # self.optimizer.step()
-            self.lr_scheduler.step(epoch)
+            self.lr_scheduler.step()
 
     # preprint lr_map
     def get_lr_map(self, title, out_file=None, viz=False):
@@ -139,17 +140,17 @@ class lr_scheduler(object):
                 self.step(epoch)
                 # TODO:按层绘制
                 # print(self.optimizer.param_groups[0]['lr'])
-                lr.append(self.optimizer.param_groups[0]['lr'])
+                lr.append((epoch, self.optimizer.param_groups[0]['lr']))
         else:
             for epoch in range(self.epochs):
                 self.step(epoch)
                 try:
-                    lr.append(self.lr_scheduler.get_last_lr())
+                    lr.append((epoch, self.lr_scheduler.get_last_lr()))
                     # lr.append(self.lr_scheduler.get_lr())
                 except:
                     # ReduceLROnPlateau没有get_lr方法
-                    lr.append(self.optimizer.param_groups[0]['lr'])
-        plt.plot(list(range(self.epochs)), lr)
+                    lr.append((lr, self.optimizer.param_groups[0]['lr']))
+        plt.plot(list(range(self.epochs)), np.array(lr)[:, 1].tolist())
         plt.xlabel("epoch")
         plt.ylabel("learning rate")
         plt.title(title)
@@ -159,6 +160,7 @@ class lr_scheduler(object):
             plt.show()
         self.optimizer.param_groups[0]['lr'] = tmp
         self.lr = tmp
+        print(lr)
 
 
 def tune_param():
@@ -207,14 +209,15 @@ if __name__ == "__main__":
     # lrs.get_lr_map("MultiStepLR")
     # lrs.set_optimizer(optimizer, optim.lr_scheduler.ExponentialLR)
     # lrs.get_lr_map("ExponentialLR")
-    # lrs.set_optimizer(optimizer, optim.lr_scheduler.StepLR)
-    # lrs.get_lr_map("StepLR")
+    lrs.set_optimizer(optimizer, optim.lr_scheduler.StepLR)
+    lrs.get_lr_map("StepLR", viz=True)
+    print(lrs.lr)
     # lrs.set_optimizer(optimizer, optim.lr_scheduler.CyclicLR)
     # lrs.get_lr_map("CyclicLR")
     # # lrs.set_optimizer(optimizer, optim.lr_scheduler.ReduceLROnPlateau)
     # # lrs.get_lr_map("ReduceLROnPlateau")
-    lrs.set_optimizer(optimizer, None)
-    lrs.get_lr_map("LambdaLR")
+    # lrs.set_optimizer(optimizer, None)
+    # lrs.get_lr_map("LambdaLR")
     # lrs.set_optimizer(optimizer, optim.lr_scheduler.CosineAnnealingLR)
     # lrs.get_lr_map("CosineAnnealingLR")
     # lrs.set_optimizer(optimizer, optim.lr_scheduler.CosineAnnealingWarmRestarts)

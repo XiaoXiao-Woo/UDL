@@ -89,6 +89,8 @@ def common_cfg():
     args.test = ""
     args.code_dir = ""
     args.start_save_epoch = 1
+    args.earlyStopping = True
+    args.flag_fast_train = True
     # args.workflow = []
 
     return Config(args)
@@ -122,7 +124,7 @@ class get_cfg(TaskDispatcher, name='entrypoint'):
             cfg = TaskDispatcher.new(cfg=args, task=task, arch=args.arch, **kwargs)
             cfg.merge_from_dict(args)
         else:
-            raise ValueError(f"nni starter don't have task={task} but expected"
+            raise ValueError(f"mode starter don't have task={task} but expected"
                              f"one of {super()._task.keys()} in TaskDispatcher")
         # cfg.setdefault('workflow', [])
         cfg = data_cfg(cfg)

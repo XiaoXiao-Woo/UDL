@@ -13,6 +13,30 @@ from udl_vis.mmcv.runner import MetricLogger, get_dist_info, get_time_str, get_h
 from udl_vis.mmcv.utils import print_log, is_str, mkdir_or_exist, Config
 
 
+class Trainer(BaseRunner, Hook_v2):
+
+    def __init__(self, cfg, logger,
+                 model, optimizer, scheduler,
+                 hook={},
+                 meta=None):
+        super(Trainer, self).__init__(cfg, logger, model,
+                                      optimizer, scheduler, hook, meta)
+        self.detect_anomalous_params = False
+
+    def run_optimizer(self):
+        self.grad_clip = 0
+        self.optimizer.zero_grad()
+        if self.detect_anomalous_params:
+            detect_anomalous_parameters(self.model.model, self.outputs['loss'], self.logger)
+        self.outputs['loss'].backward()
+        if not hasattr(self.model, 'train'):
+            grad_norm = clip_grads(self.grad_clip, self.model.model.parameters())
+        else:
+            grad_norm = clip_grads(self.grad_clip, self.model.parameters())
+
+        self.log_buffer.update_dict({'grad_norm': float(grad_norm)})
+        self.optimizer.step()
+
 class BaseRunner(metaclass=ABCMeta):
     """The base class of Runner, a training helper for PyTorch.
 
@@ -89,7 +113,8 @@ class BaseRunner(metaclass=ABCMeta):
         hook_dict = dict(
             ModelCheckpoint=dict(type=hooks.ModelCheckpoint, priority='NORMAL',
                                  indicator='loss', save_top_k=cfg.save_top_k,
-                                 use_log_and_save=cfg.use_log_and_save),
+                                 use_save=cfg.use_save, save_interval=cfg.save_interval, earlyStopping=cfg.earlyStopping,
+                                 start_save_epoch=cfg.start_save_epoch, flag_fast_train=cfg.flag_fast_train),
             TextLogger=dict(type=hooks.TextLoggerHook, interval=cfg.log_interval,
                             priority='VERY_LOW'),
             IterTimer=dict(type=hooks.IterTimerHook, priority='LOW')
