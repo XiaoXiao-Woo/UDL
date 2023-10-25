@@ -68,14 +68,15 @@ We appreciate all contributions to improving PanCollection. Looking forward to y
 
 ## Citation
 Please cite this project if you use datasets or the toolbox in your research.
-```
+```bibtex
 @misc{PanCollection,
     author = {Xiao Wu, Liang-Jian Deng and Ran Ran},
     title = {"PanCollection" for Remote Sensing Pansharpening},
     url = {https://github.com/XiaoXiao-Woo/PanCollection/},
     year = {2022},
 }
-
+```
+```bibtex
 @InProceedings{Wu_2021_ICCV,
     author    = {Wu, Xiao and Huang, Ting-Zhu and Deng, Liang-Jian and Zhang, Tian-Jing},
     title     = {Dynamic Cross Feature Fusion for Remote Sensing Pansharpening},
