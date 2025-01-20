@@ -25,7 +25,9 @@ UDL is a unified Pytorch framework for vision research:
 * **2024.12**: *Fully-connected Transformer for Multi-source Image Fusion.*  IEEE T-PAMI 2025. ([Paper](coming soon), [Code](https://github.com/XiaoXiao-Woo/FC-Former)) 📖
 * **2024.12**: *Deep Learning in Remote Sensing Image Fusion: Methods, Protocols, Data, and Future Perspectives.* IEEE GRSM 2024. ([Paper](https://ieeexplore.ieee.org/abstract/document/10778974)) 📖
 * **2024.10**: *SSDiff: Spatial-spectral Integrated Diffusion Model for Remote Sensing Pansharpening.* NeurIPS 2024. ([Paper](https://openreview.net/pdf?id=QMVydwvrx7), [Code](https://github.com/Z-ypnos/SSDiff_main)) 🚀
-
+* **2024.5**: *Content-Adaptive Non-Local Convolution for Remote Sensing Pansharpening.* CVPR 2024. ([Paper](https://openaccess.thecvf.com/content/CVPR2024/html/Duan_Content-Adaptive_Non-Local_Convolution_for_Remote_Sensing_Pansharpening_CVPR_2024_paper.html), [Code](https://github.com/YuleDuan/CANConv)) 🚀
+* **2022.5**: We released PanCollection. 🎉
+* **2022.5**: We released UDL. 🎉
 
 ## Features
 
