@@ -15,6 +15,7 @@ UDL is a unified Pytorch framework for vision research:
 ## News🔥🔥🔥
 * **2025-?**: We will Release **UDL-CIL** for experimental management. 🎉
 * **2025.1**: Release **UDL v1.0.0**. 🎉
+* **2025.1**: Release **[datasets_searchpath_plugins](https://github.com/XiaoXiao-Woo/datasets_searchpath_plugins)** based on [Hydra](https://hydra.cc/docs/intro/). 🎉
 * :art: The FC-Former convers multiple multi-source image fusion scenes:
   * Multispectral and hyperspectral image fusion;
   * Remote sensing pansharpening;
