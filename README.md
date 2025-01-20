@@ -1,4 +1,4 @@
-# Unified Deep Learning Framework for Vision Tasks (Release v1.0.0 [PyPI](https://pypi.org/project/udl-vis/) :taa:)
+# Unified Deep Learning Framework for Vision Tasks (Release v1.0.0 [PyPI](https://pypi.org/project/udl-vis/) :tada:)
 
 
 [[UDL](https://github.com/XiaoXiao-Woo/UDL)] [[PanCollection](https://github.com/XiaoXiao-Woo/PanCollection)] [[HyperSpectralCollection]()] [[MSIF]()] 
