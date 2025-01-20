@@ -136,7 +136,7 @@ Please cite this project if you use datasets or the toolbox in your research.
 }
 ```
 
-```bibitex
+```bibtex
 @article{vivone2024deep,
   title={Deep Learning in Remote Sensing Image Fusion: Methods, protocols, data, and future perspectives},
   author={Vivone, Gemine and Deng, Liang-Jian and Deng, Shangqi and Hong, Danfeng and Jiang, Menghui and Li, Chenyu and Li, Wei and Shen, Huanfeng and Wu, Xiao and Xiao, Jin-Liang and others},
