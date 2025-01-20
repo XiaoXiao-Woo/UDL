@@ -1,0 +1,158 @@
+{
+    "optimizer": {
+        "name": "soap",
+        "lr": 0.001,
+        "weight_decay": 1e-05,
+        "betas": [
+            0.95,
+            0.99
+        ]
+    },
+    "lr_scheduler": {
+        "name": "cos_anneal_restart_reduce",
+        "T_0": 20,
+        "T_mult": 2,
+        "lr_mult": 0.7,
+        "eta_min": 8e-05,
+        "warmup_epochs": 0
+    },
+    "max_norm": 1.0,
+    "ema_decay": 0.995,
+    "ema_update_every": 1,
+    "path": {
+        "wv3_train_path": "/home/dsq/nips/datasets/PanCollection/training_data/train_wv3_9714.h5",
+        "wv3_val_path": "/home/dsq/nips/datasets/PanCollection/test_data/test_wv3_multiExm1.h5",
+        "wv3_full_path": "/home/dsq/nips/datasets/PanCollection/test_data/test_wv3_multiExm1.h5",
+        "gf2_train_path": "/home/dsq/nips/datasets/PanCollection/training_data/train_gf2_19809.h5",
+        "gf2_val_path": "/home/dsq/nips/datasets/PanCollection/test_data/test_gf2_multiExm1.h5",
+        "gf2_full_path": "/home/dsq/nips/datasets/PanCollection/test_data/test_gf2_multiExm1.h5",
+        "qb_train_path": "/home/dsq/nips/datasets/PanCollection/training_data/train_qb_17139.h5",
+        "qb_val_path": "/home/dsq/nips/datasets/PanCollection/test_data/test_qb_multiExm1.h5",
+        "qb_full_path": "/home/dsq/nips/datasets/PanCollection/test_data/test_qb_multiExm1.h5"
+    },
+    "network_configs": {
+        "unfold_deq_pan_Unfolding_DEQ": {
+            "num_spectral": 8,
+            "num_channel": 32,
+            "factor": 4,
+            "lambda1": 0.1,
+            "lambda2": 0.001,
+            "if_deq": true,
+            "patch_merge": true,
+            "args": {
+                "f_solver": "broyden",
+                "b_solver": "broyden",
+                "f_max_iter": 20,
+                "b_max_iter": 20,
+                "f_tol": 0.001,
+                "b_tol": 1e-06,
+                "f_stop_mode": "abs",
+                "b_stop_mode": "abs",
+                "eval_factor": 2.0,
+                "eval_f_max_iter": 0,
+                "norm_type": "weight_norm",
+                "norm_no_scale": false,
+                "norm_clip": false,
+                "norm_clip_value": 1.0,
+                "norm_target_norm": 1.0,
+                "sn_n_power_iters": 1,
+                "core": "sliced",
+                "ift": false,
+                "hook_ift": false,
+                "n_states": 1,
+                "indexing": [],
+                "gamma": 0.8,
+                "grad": [
+                    5
+                ],
+                "tau": 0.7,
+                "sup_gap": -1,
+                "sup_loc": [],
+                "jac_loss_weight": 0.0,
+                "jac_loss_freq": 0.0,
+                "jac_incremental": 0,
+                "sradius_mode": false
+            }
+        }
+    },
+    "loss_cfg": {
+        "l1ssim": {
+            "weighted_r": [
+                1.0,
+                0.1
+            ],
+            "implem_by": "torch",
+            "window_size": 5,
+            "grad_norm": false
+        }
+    },
+    "metric_name_for_save": {
+        "sharpening": "PSNR",
+        "check_order": {
+            "fusion": "down",
+            "sharpening": "up"
+        }
+    },
+    "logger_config": {
+        "base_path": "./log_file/",
+        "name": "2024-12-31-14-44-21_unfolding_deq_51d2cvif_unfolding_deq on wv3 dataset",
+        "file_mode": "w"
+    },
+    "arch": "pannet",
+    "sub_arch": null,
+    "config_file": "/home/dsq/nips/MIF/MIF/configs/unfolding_deq_config.yaml",
+    "model_class": "unfold_deq_pan_Unfolding_DEQ",
+    "pretrain_model_path": null,
+    "non_load_strict": true,
+    "num_train_epochs": 3000,
+    "val_n_epoch": 10,
+    "warm_up_epochs": 10,
+    "loss": "l1ssim",
+    "pad_window_base": 32,
+    "grad_accum_steps": 1,
+    "checkpoint_every_n": 10,
+    "ckpt_max_limit": 10,
+    "mix_precison": "fp32",
+    "sanity_check": false,
+    "regardless_metrics_save": false,
+    "pretrain": false,
+    "pretrain_id": null,
+    "resume_path": null,
+    "resume_lr": null,
+    "resume_total_epochs": null,
+    "nan_no_raise": false,
+    "split_ratio": null,
+    "load": false,
+    "save_base_path": "./weight",
+    "proj_root": "log_file",
+    "dataset": "wv3",
+    "batch_size": 1028,
+    "train_bs": 32,
+    "val_bs": 1,
+    "fusion_crop_size": 72,
+    "only_y_train": false,
+    "shuffle": true,
+    "fast_eval_n_samples": 128,
+    "aug_probs": [
+        0.0,
+        0.0
+    ],
+    "seed": 3407,
+    "num_worker": 6,
+    "ergas_ratio": 4,
+    "logger_on": true,
+    "proj_name": "Unfolding_DEQ",
+    "run_name": null,
+    "resume_id": "None",
+    "run_id": "51d2cvif",
+    "watch_log_freq": 10,
+    "watch_type": "None",
+    "log_metrics": true,
+    "debug": false,
+    "world_size": 1,
+    "dist_url": "env://",
+    "ddp": false,
+    "comment": "unfolding_deq on wv3 dataset",
+    "device": "cuda",
+    "full_arch": "unfold_deq_pan_Unfolding_DEQ"
+}
