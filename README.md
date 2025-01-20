@@ -22,7 +22,7 @@ UDL is a unified Pytorch framework for vision research:
   * Digital photographic image fusion: Multi-focus image fusion (MFF) and multi-exposure image fusion (MEF). 
 * 🎁 We will release a new version of [UDL](https://github.com/XiaoXiao-Woo/UDL), [PanCollection](https://github.com/XiaoXiao-Woo/PanCollection). Furthermore, we also release repositories of [HyperSpectralCollection, comming soon](https://github.com/XiaoXiao-Woo/HyperSpectralCollection) and [MSIF, comming soon](https://github.com/XiaoXiao-Woo/MSIF).
 * **2025.1**: Release **PanCollection v1.0.0**. 🎉
-* **2024.12**: *Fully-connected Transformer for Multi-source Image Fusion.*  IEEE T-PAMI 2025. ([Paper](coming soon)) 📖
+* **2024.12**: *Fully-connected Transformer for Multi-source Image Fusion.*  IEEE T-PAMI 2025. ([Paper](coming soon), [Code](https://github.com/XiaoXiao-Woo/FC-Former)) 📖
 * **2024.12**: *Deep Learning in Remote Sensing Image Fusion: Methods, Protocols, Data, and Future Perspectives.* IEEE GRSM 2024. ([Paper](https://ieeexplore.ieee.org/abstract/document/10778974)) 📖
 * **2024.10**: *SSDiff: Spatial-spectral Integrated Diffusion Model for Remote Sensing Pansharpening.* NeurIPS 2024. ([Paper](https://openreview.net/pdf?id=QMVydwvrx7), [Code](https://github.com/Z-ypnos/SSDiff_main)) 🚀
 
