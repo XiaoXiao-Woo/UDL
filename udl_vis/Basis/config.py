@@ -99,12 +99,16 @@ class getAttrCLS:
 def merge_keys(cfg):
     # Example: cfg.args and cfg.base
     # only easy for user to view, not easy for user to use
+    backend = cfg.backend
+    launcher = cfg.launcher
     if hasattr(cfg.base, "merge_keys"):
         for k in cfg.base.merge_keys:
             if cfg.get(k, None) is not None:
                 cfg.merge_from_dict(cfg.get(k, {}))
                 cfg.__delattr__(k)
         cfg.__delattr__("merge_keys")
+    cfg.backend = backend
+    cfg.launcher = launcher
 
 
 def import_modules_from_strings(imports, allow_failed_imports=False):

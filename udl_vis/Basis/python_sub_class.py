@@ -225,6 +225,7 @@ class ModelDispatcher(object):
             raise ValueError(
                 f"Got task={task} but expected " f"one of {cls._task.keys()} in {cls}"
             )
+        
         if cfg.get("import_path", None) is not None:
             if os.path.isfile("/".join([*cfg.import_path, "__init__.py"])):
                 sys.path.append(cfg.import_path[0])

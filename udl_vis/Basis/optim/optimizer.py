@@ -200,12 +200,13 @@ class Optimizer():
         grad_norm = cal_clip_grad(self.model, self.optimizer, self.grad_clip_norm, 
                                   self.grad_clip_value, self.loss_scaler, self.accelerator)
 
+        # short operator to pass gradient_accumulation_steps
         if (
+            self.accelerator is not None and 
             self.accelerator.gradient_accumulation_steps == 1
-            and self.accelerator is not None
         ):
             self.optimizer.step()
-        
+
         self.optimizer.zero_grad()
 
         return grad_norm
