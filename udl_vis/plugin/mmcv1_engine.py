@@ -40,7 +40,6 @@ from udl_vis.mmcv.runner import (
 # from mmdet.datasets import (build_dataloader, build_dataset,
 #                             replace_ImageToTensor)
 from torch import distributed as dist
-from udl_vis.plugin.engine_utils import parse_dispatcher
 from udl_vis.plugin.base import get_data_loader
 
 
@@ -56,12 +55,6 @@ def run_mmcv1_engine(
     meta=None,
     **kwargs,
 ):
-    
-    if isinstance(build_model, list):
-        model, optimizer, scheduler = build_model
-    else:
-        model, optimizer, scheduler = parse_dispatcher(cfg, build_model)
-
     if hasattr(model, "init_weights"):
         model.init_weights()
 

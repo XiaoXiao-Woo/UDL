@@ -17,7 +17,7 @@ try:
 except:
     import functools
 
-    def empty_decorator(arg=None):
+    def websocket_communicator(arg=None):
         def decorator(func):
             @functools.wraps(func)
             def wrapper(*args, **kwargs):

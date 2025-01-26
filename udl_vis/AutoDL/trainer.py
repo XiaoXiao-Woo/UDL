@@ -19,8 +19,8 @@ import types
 
 os.environ["NCCL_P2P_DISABLE"] = "1"
 os.environ["NCCL_IB_DISABLE"] = "1"
-os.environ.get("MASTER_ADDR", "localhost")
-os.environ.get("MASTER_PORT", "24567")
+os.environ["MASTER_ADDR"] = os.environ.get("MASTER_ADDR", "localhost")
+os.environ["MASTER_PORT"] = os.environ.get("MASTER_PORT", "24567")
 
 def run_hydra(
     full_config_path="configs/config",
@@ -28,6 +28,8 @@ def run_hydra(
     taskModel=None,
     build_model=None,
     getDataSession=None,
+    backend="accelerate",
+    launcher="accelerate",
 ):
     config_path = os.path.dirname(full_config_path)
     config_name = os.path.basename(full_config_path)
@@ -38,11 +40,14 @@ def run_hydra(
             cfg = Config(OmegaConf.to_container(cfg, resolve=True))
             hydra_cfg = HydraConfig.get()
             cfg.work_dir = cfg.get("work_dir", hydra_cfg.runtime.output_dir)
-        cfg.backend = "accelerate"
-        cfg.launcher = "accelerate"
+        cfg.backend = backend
+        cfg.launcher = launcher
         if import_path is not None:
             cfg.import_path = import_path
-        main(cfg, taskModel, build_model, getDataSession)
+        if cfg.launcher == "pytorch":
+            main_spawn(cfg, taskModel, build_model, getDataSession)
+        else:
+            main(cfg, taskModel, build_model, getDataSession)
 
     return inner_func()
 
@@ -77,31 +82,39 @@ def trainer(
 def train_loop(local_rank, cfg, build_task, build_model, getDataSession, runner):
     # rank, _ = get_dist_info()
 
-    if cfg.launcher == "accelerator":
-        from accelerate.utils import (
-            InitProcessGroupKwargs,
-            prepare_multi_gpu_env,
-            patch_environment,
-        )
+    # accelerate is not supported from spawn
+    # if cfg.launcher == "accelerator":
+    #     from accelerate.utils import (
+    #         InitProcessGroupKwargs,
+    #         prepare_multi_gpu_env,
+    #         patch_environment,
+    #     )
 
-        os.environ["MASTER_ADDR"] = "127.0.0.1"
-        os.environ["MASTER_PORT"] = "23456"
-        # os.environ["LOCAL_RANK"] = "0"
-        # os.environ["WORLD_SIZE"] = str(len(cfg.gpu_ids))
-        # os.environ["RANK"] = str(local_rank)
-        cfg.accelerator_kwargs_handlers = InitProcessGroupKwargs()
-        cfg.accelerator_kwargs_handlers.world_size = len(cfg.gpu_ids)
-        cfg.accelerator_kwargs_handlers.rank = str(local_rank)
-        # current_env = prepare_multi_gpu_env(cfg)
-        # with patch_environment(**current_env):
-        #    main(cfg, build_model, getDataSession)
+    #     os.environ["MASTER_ADDR"] = "127.0.0.1"
+    #     os.environ["MASTER_PORT"] = "23456"
+    #     # os.environ["LOCAL_RANK"] = "0"
+    #     # os.environ["WORLD_SIZE"] = str(len(cfg.gpu_ids))
+    #     # os.environ["RANK"] = str(local_rank)
+    #     cfg.accelerator_kwargs_handlers = InitProcessGroupKwargs()
+    #     cfg.accelerator_kwargs_handlers.world_size = len(cfg.gpu_ids)
+    #     cfg.accelerator_kwargs_handlers.rank = str(local_rank)
+    #     # current_env = prepare_multi_gpu_env(cfg)
+    #     # with patch_environment(**current_env):
+    #     #    main(cfg, build_model, getDataSession)
 
-    else:  # pytorch DDP
+    # else:  # pytorch DDP
+    
+
+    if cfg.launcher not in  ["no", "accelerate"]:
         cfg.dist_params = dict(
-            rank=local_rank, init_method="env://", world_size=len(cfg.gpu_ids)
+            rank=local_rank, init_method="env://", world_size=cfg.num_gpus
         )
-        os.environ["RANK"] = str(local_rank)
+        os.environ["LOCAL_RANK"] = str(local_rank)
         main(cfg, build_task, build_model, getDataSession)
+    else:
+        raise ValueError(
+            f"Invalid launcher type: {cfg.launcher}, only support pytorch's DDP, DP"
+        )
 
 
 def main_spawn(cfg, build_task, build_model, getDataSession=None, runner=None):
@@ -111,17 +124,19 @@ def main_spawn(cfg, build_task, build_model, getDataSession=None, runner=None):
     #     from accelerate import notebook_launcher
     #     port = os.environ.get("MASTER_PORT", "36790")
     #     notebook_launcher(
-    #         main, (cfg, build_task, build_model, getDataSession, runner), 
+    #         main, (cfg, build_task, build_model, getDataSession, runner),
     #         num_processes=len(cfg.gpu_ids), use_port=port
     #     )
     # else:
-    
-    os.environ["MASTER_ADDR"] = "127.0.0.1"
-    port = os.environ.get("MASTER_PORT", "36790")
+
+    # We will use CUDA_VISIBLE_DEVICES to set the visible GPUs
+    import torch
+    num_gpus = torch.cuda.device_count()
+    cfg.num_gpus = num_gpus
     mp.spawn(
             train_loop,
             args=(cfg, build_task, build_model, getDataSession, runner),
-            nprocs=len(cfg.gpu_ids),
+            nprocs=num_gpus,
         )
 
 

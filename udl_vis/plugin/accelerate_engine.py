@@ -6,6 +6,7 @@ from accelerate import (
     PartialState,
     DistributedType,
     DataLoaderConfiguration,
+    DistributedDataParallelKwargs,
 )
 from accelerate.utils import extract_model_from_parallel, GradientAccumulationPlugin
 
@@ -23,7 +24,6 @@ from udl_vis.Basis.ema import EMA, EMAHook  # DeepspeedEMA
 from udl_vis.Basis.checkpoint import ModelCheckpoint
 import gc
 import shutil
-import ipdb
 import time
 from .base import val
 from udl_vis.Basis.dev_utils.deprecated import deprecated, deprecated_context
@@ -125,8 +125,7 @@ class AcceleratorEngine:
         #     import inspect
         #     parameters = inspect.signature(build_model).parameters
         #     raise TypeError(f"{e}, build_model need parameters: {parameters}")
-        # self.model.to(f"cuda:{int(os.environ.get("LOCAL_RANK", 0))}")
-
+        # self.model.to(f"cuda:{int(os.environ.get("LOCAL_RANK", 0))}")``
         self.model, criterion, optimizer, scheduler = build_model(cfg, logger)
 
         plugin_dicts = {}
@@ -180,6 +179,7 @@ class AcceleratorEngine:
                 sync_with_dataloader=False,
                 sync_each_batch=False,
             ),
+            kwargs_handlers=[DistributedDataParallelKwargs(find_unused_parameters=True)],
             **plugin_dicts,
         )
 
@@ -500,6 +500,8 @@ class AcceleratorEngine:
             logger=self.logger,
         )
         # TODO: multi-objective optimization
+        import ipdb
+        ipdb.set_trace()
         return {"best_value": metrics[best_metric_name]}
 
 
