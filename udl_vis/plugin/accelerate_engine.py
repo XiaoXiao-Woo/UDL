@@ -448,11 +448,21 @@ class AcceleratorEngine:
         from udl_vis.Basis.auxiliary import MetricLogger
 
         log_buffer = MetricLogger(logger=self.logger, delimiter="  ")
-        path = self.checkpoint.get_best_checkpoints(self.model_dir)
+        resume_from = self.cfg.resume_from
+        model_dir = self.model_dir
+        if resume_from != "":
+            base_resume_from = os.path.basename(resume_from)
+            epoch = int(base_resume_from.split("_")[1])
+            if epoch == self.cfg.max_epochs:
+                model_dir = os.path.dirname(resume_from)
+            
+
+        path = self.checkpoint.get_best_checkpoints(model_dir)
         print_log(f"Loading best checkpoint from {path}", logger=self.logger)
         self.resume(path)
         fname = os.path.basename(path)
         version = len(fname.split("_"))
+
         with deprecated_context(
             "end_of_run",
             "model_{epoch}_{metrics} will be deprecated in a future version. Please use model_{epoch}_{iter}_{metrics} instead.",
@@ -463,6 +473,9 @@ class AcceleratorEngine:
             elif version == 4:
                 best_epoch = int(fname.split("_")[1])
                 best_iter = int(fname.split("_")[2])
+        
+        results_dir = os.path.join(self.cfg.work_dir, f"results/best_{best_epoch}_{best_iter}")
+        
         _, _, log_buffer = val(
             runner=self,
             data_loader=data_loader,
@@ -472,14 +485,14 @@ class AcceleratorEngine:
             log_buffer=log_buffer,
             img_range=self.cfg.img_range,
             eval_flag=True,
-            save_fmt=self.formatter,
+            save_fmt=self.cfg.save_fmt,
             test=self.cfg.test,
             _iter=best_iter,
             test_mode=True,
             mode=mode,
             data_length={mode: len(data_loader)},
             # not save, only obtain best results to store into db (udl_cil)
-            results_dir=os.path.join(self.cfg.work_dir, "results/best_{epoch}"),
+            results_dir=results_dir,
             log_epoch_interval=self.cfg.log_epoch_interval,
             train_log_iter_interval=self.cfg.train_log_iter_interval,
             val_log_iter_interval=self.cfg.val_log_iter_interval,
@@ -494,13 +507,17 @@ class AcceleratorEngine:
             for k, meter in log_buffer.meters.items()
         }
 
-        best_metric_name = f"{mode}_{self.metrics[mode]}"
+        # best_metric_name = f"{mode}_{self.metrics[mode]}"
+        
+        shutil.move(results_dir, (results_dir+"_{metrics_name}_{metrics}") \
+                    .format(epoch=best_epoch, iter=best_iter, 
+                            metrics_name=self.metrics[mode], metrics=metrics[self.metrics[mode]]))
         print_log(
-            f"Metrics: {metrics}, {best_metric_name} is chosen as the best metric",
+            f"Metrics: {metrics}, {self.metrics[mode]} is chosen as the best metric",
             logger=self.logger,
         )
         # TODO: multi-objective optimization
-        return {"best_value": metrics[best_metric_name]}
+        return {"best_value": metrics[self.metrics[mode]]}
 
 
 def run_accelerate_engine(
