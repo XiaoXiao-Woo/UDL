@@ -4,54 +4,63 @@ if __name__ == "__main__":
     install()
 
 import torch
-from udl_vis.Basis.dist_utils import master_only
+from udl_vis.Basis.dist_utils import master_only, allreduce_params
 from udl_vis.plugin.mmcv1_engine import (
     set_random_seed,
     get_data_loader,
     print_log,
 )
-from udl_vis.mmcv.runner import (
-    MetricLogger,
-    load_checkpoint,
-    find_latest_checkpoint,
-    save_checkpoint,
-)
-
+from udl_vis.Basis.checkpoint import ModelCheckpoint
 import time
-from functools import partial
 import os
-import platform
-import shutil
-import numpy as np
-from collections import OrderedDict
-import datetime
-from pancollection.common.data import DummySession
-from udl_vis.plugin.engine_utils import parse_dispatcher
 from udl_vis.Basis.optim.optimizer import Optimizer
-import ipdb
-import inspect
 from udl_vis.plugin.base import run_engine
+import gc
+from .base import val
+from udl_vis.Basis.dev_utils.deprecated import deprecated, deprecated_context
+
+
+def parser_mixed_precision(mixed_precision):
+    if mixed_precision == "fp32" or mixed_precision == "no" or mixed_precision is None:
+        return torch.float32
+    elif mixed_precision == "fp16":
+        return torch.float16
+    elif mixed_precision == "bf16":
+        return torch.bfloat16
+    else:
+        raise ValueError(f"Invalid mixed precision value: {mixed_precision}")
 
 
 class NaiveEngine:
-    def __init__(self, cfg, task_model, build_model, logger):
+    def __init__(self, cfg, task_model, 
+                 build_model, logger,
+                 sync_buffer=False):
         super().__init__()
 
-        self.logger = logger
         self.cfg = cfg
-        self.device = cfg.device
+        self.load_model_status = False
+        self.sync_buffer = sync_buffer
+        self.metrics = cfg.metrics
+        self.formatter = cfg.formatter
+        self.model_dir = self.cfg.model_dir
+        self.results_dir = os.path.dirname(self.cfg.results_dir)
+        self.summaries_dir = self.cfg.summaries_dir
+        self.logger = logger
+        self.by_epoch = cfg.by_epoch
+        self.checkpoint = ModelCheckpoint(
+            indicator=self.metrics["train"],
+            save_latest_limit=cfg.save_latest_limit,
+            save_top_k=cfg.save_latest_limit,
+            logger=logger,
+        )
 
-        try:
-            self.model, criterion, self._optimizer, scheduler = build_model(
-                device=self.device
-            )(cfg)
-        except Exception as e:
-            parameter = inspect.signature(build_model)
-            print(parameter)
-            raise e
+        self.dtype = parser_mixed_precision(cfg.mixed_precision)
 
-        self.device = cfg.device
-
+        # CUDA_VISIBLE_DEVICES
+        # torch.cuda.set_device() (DDP)
+        self.device = torch.cuda.current_device() 
+        self.model, criterion, self._optimizer, scheduler = build_model(cfg, logger)
+        self.model.to(self.device)
         self.optimizer_wrapper = Optimizer(
             self.model,
             self._optimizer,
@@ -64,170 +73,273 @@ class NaiveEngine:
             accelerator=None,
         )
         self.scheduler = scheduler
-        self.task_model = task_model(cfg.device, self.model, criterion)
+        self.task_model = task_model(self.device, self.model, criterion)
 
-    def train_step(self, batch, **kwargs):
-        with torch.amp.autocast(self.device):
-            metrics = self.task_model.train_step(batch, **kwargs)
-
-            self.model.zero_grad(set_to_none=True)
-            self._optimizer.zero_grad(set_to_none=True)
-            # self.ema_net._zero_grad(set_to_none=True)
-            torch.cuda.empty_cache()
-            torch.cuda.synchronize()
-            # print(f"loss is nan, skip {_skip_n} batch(es) in this epoch")
-
-        return metrics
+    def train_step(self, batch, iteration, **kwargs):
+        with torch.amp.autocast(device_type="cuda" if torch.cuda.is_available() else "cpu"):
+            log_vars = self.task_model.train_step(batch, **kwargs)
+            if torch.isnan(log_vars["loss"]):
+                self.model.zero_grad(set_to_none=True)
+                self._optimizer.zero_grad(set_to_none=True)
+                if self.ema_net is not None:
+                    self.ema_net._zero_grad(set_to_none=True)
+                gc.collect()
+                torch.cuda.empty_cache()
+                torch.cuda.synchronize()
+        # print(f"loss is nan, skip {_skip_n} batch(es) in this epoch")
+        # self.ema_net.after_train_iter(iteration)
+        # optimizer.step() is out of autocast
+        self.iter_time = time.time() - self.tic
+        grad_norm = self.optimizer_wrapper.step(log_vars)
+        return {
+            **log_vars,
+            **grad_norm,
+            "data_time": self.data_time,
+            "iter_time": self.iter_time,
+        }
 
     def val_step(self, batch, **kwargs):
         return self.task_model.val_step(batch, **kwargs)
 
     def test_step(self, batch, **kwargs):
+
         return self.task_model.val_step(batch, **kwargs)
 
-    def after_train_epoch(self, loss, epoch):
+    def before_run(self):
+
+        if self.cfg.use_ema:
+            if not deep_speed_zero_n_init(
+                self.accelerator, n=[2, 3]
+            ) and "FSDP" not in self.cfg.get("plugins", []):
+                print_log(f"Use EMA model and register for checkpointing")
+                # self.ema_net = EMA(self.model, beta=self.cfg.ema_decay, update_every=2 * self.accelerator.gradient_accumulation_steps)
+                self.ema_net = EMAHook(
+                    model=self.model,
+                    momentum=1 - self.cfg.ema_decay,
+                    interval=2 * self.accelerator.gradient_accumulation_steps,
+                    strict=False,
+                )
+                # self.ema_net = DeepspeedEMA(model=self.model, momentum=1-self.cfg.ema_decay, interval=2 * self.accelerator.gradient_accumulation_steps)
+                self.ema_net.before_run()
+                self.accelerator.register_for_checkpointing(self.ema_net)
+            else:
+                self.ema_net = None
+                print_log("Can't use EMA model in FSDP mode", logger=self.logger)
+        else:
+            self.ema_net = None
+
+        self.resume_checkpoints(self.cfg.resume_from)
+        # self.accelerator.wait_for_everyone()
+
+    def before_train_epoch(self):
+        self.tic = time.time()
+
+    def after_train_epoch(self, loss_dicts, _iter, epoch, _inner_iter):
+
         if self.scheduler is not None:
             if isinstance(self.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
-                self.scheduler.step(loss)
+                if not self.accelerator.optimizer_step_was_skipped:
+                    self.scheduler.step(loss_dicts["loss"])
+                else:
+                    print_log(
+                        f"The optimizer step was skipped due to mixed precision overflow"
+                    )
+
             else:
-                self.scheduler.step(epoch)
+                if not self.accelerator.optimizer_step_was_skipped:
+                    self.scheduler.step(
+                        epoch - 1 if self.by_epoch else _iter - 1
+                    )  # epoch defaluts to 0
+                else:
+                    print_log(
+                        f"The optimizer step was skipped due to mixed precision overflow"
+                    )
 
-    def before_run(self):
-        # EMA
-        # load checkpoint
-        if self.cfg.resume_from is not None:
-            self.state_dataloader = self.resume()
+    def before_train_iter(self):
+        self.data_time = time.time() - self.tic
 
-    @master_only
-    def save_ckpt(
-        self,
-        epoch,
-        _iter,
-        filename_tmpl="model_{}.pth",
-        save_optimizer=True,
-        meta=None,
-        create_symlink=True,
-    ):
+    def after_train_iter(self, loss_dicts, _iter, _inner_iter):
+        self.tic = time.time()
 
-        if meta is None:
-            meta = {}
-        elif not isinstance(meta, dict):
-            raise TypeError(f"meta should be a dict or None, but got {type(meta)}")
-        if meta is not None:
-            meta.update(meta)
+    def resume_checkpoints(self, path):
+        retry_count = 0  # 0: load latest/best, 1: load sub-latest/sub-best
+        while retry_count < 2:
+            # maybe the model is not ready, so we need to retry to load sub-latest or sub-best model.
+            if path is None or path == "":
+                if self.cfg.resume_mode == "latest":
+                    path = self.checkpoint.get_latest_checkpoints(
+                        self.model_dir, retry_count
+                    )
+                    self.cfg.resume_mode = "best"  # "best" contains "latest", but we should first load model from "latest" is better
+                elif self.cfg.resume_mode == "best":
+                    path = self.checkpoint.get_best_checkpoints(
+                        self.model_dir, retry_count
+                    )
+            if path is not None and os.path.isdir(path):
+                self.resume(path, retry_count)
+                fname = os.path.basename(path)
 
-        meta.update(model=self.model, epoch=epoch, iter=_iter)
+                tup = fname.split("_")
+                save_version = len(tup)
+                with deprecated_context(
+                    "save_version",
+                    "model_{epoch}_{metrics} will be deprecated in a future version. Please use model_{epoch}_{iter}_{metrics} instead.",
+                ):
+                    if save_version == 3:
+                        if self.cfg.workflow[0][0] == "test":
+                            self.start_iter = 1
+                            self.start_epoch = int(tup[1])
+                        else:
+                            self.start_iter = 1
+                            self.start_epoch = int(tup[1]) + 1
+                        return
+                    elif save_version == 4:
+                        if self.cfg.workflow[0][0] == "test":
+                            self.start_iter = int(tup[2])
+                            self.start_epoch = int(tup[1])
+                        else:
+                            self.start_iter = int(tup[2]) + 1
+                            self.start_epoch = int(tup[1]) + 1
+                        return
+                    else:
+                        raise ValueError(f"Invalid save version: {save_version}")
 
-        filename = filename_tmpl.format(epoch)
-        filepath = os.path.join(self.cfg.model_dir, filename)
-        if save_optimizer:
-            optimizer = self.optimizer_wrapper.optimizer
-            log_str = "optimizer"
+            else:
+                print_log(
+                    f"Loading path:{path} failed. Maybe the path is not a directory. The model will be trained/inferred from scratch"
+                )
+                return
+            # try:
+            #     if path is not None and os.path.isdir(path):
+            #         self.resume(path, retry_count)
+            #         fname = os.path.basename(path)
+            #         if self.cfg.workflow[0][0] == "test":
+            #             self.start_epoch = int(fname.split("_")[1])
+            #         else:
+            #             self.start_epoch = int(fname.split("_")[1]) + 1
+            #         return
+            #     else:
+            #         print_log(f"Loading path:{path} failed. Maybe the path is not a directory. The model will be trained/inferred from scratch")
+            #         return
+            # except Exception as e:
+            #     retry_count += 1
+
+            #     raise ValueError(f"Loading path:{path}. {e}")
+
+    def resume(self, path, retry_count=0):
+
+        # self.checkpoint.load_checkpoint(path)
+        self.accelerator.load_state(input_dir=path, strict=False)
+        # self.accelerator.state.epoch = self.cfg.start_epoch
+        if retry_count == 0:
+            print_log(
+                f"{self.accelerator.process_index} loaded {self.cfg.resume_mode.lower()} state from {path} done.",
+                logger=self.logger,
+            )
         else:
-            optimizer = None
-            log_str = ""
+            print_log(
+                f"{self.accelerator.process_index} loaded sub-{self.cfg.resume_mode.lower()} state from {path} done.",
+                logger=self.logger,
+            )
+        self.load_model_status = True
 
-        meta.update(optimizer=optimizer)
+    def save_ckpt(self, epoch, log_vars, _iter):
 
-        save_checkpoint(filepath, meta=meta)
+        if self.sync_buffer:
+            allreduce_params(self.model.buffers())
 
-        if create_symlink:
-            dst_file = os.path.join(self.cfg.model_dir, "latest.pth")
-            if platform.system() != "Windows":
-                if os.path.lexists(dst_file):
-                    os.remove(dst_file)
-                os.symlink(filename, dst_file)
-            else:
-                shutil.copy(filepath, dst_file)
+        if self.ema_net is not None:
+            saved_model = self.ema_net.ema_model
+        else:
+            saved_model = self.model
 
-        # FIXME: loss scaler
+        saved_path = os.path.join(
+            self.model_dir,
+            self.formatter.format(
+                iter=_iter - 1,
+                epoch=epoch,
+                metrics=log_vars[f'{self.metrics["train"]}'],
+            ),
+        )
+
+        # TODO: Use accelerate to save model
+        # self.accelerator.save_model(
+        #     saved_model,
+        #     saved_path,
+        #     safe_serialization=True,
+        # )
+        # # Saves the current states of the model, optimizer, scaler, RNG generators, and registered objects to a folder.
+        # self.accelerator.save_state(output_dir=saved_path, safe_serialization=True)
+
+        # if self.accelerator.is_main_process:
+        #     # save parial results/checkpoints according to the training results
+        #     self.checkpoint.after_train_epoch(self.model_dir, self.results_dir)
+
+        # self.accelerator.wait_for_everyone()
+        # self.resume(self.model_dir)
+
+    def end_of_run(self, mode, data_loader):
+        # mode: "test" or "val"
+        # data_loader: data_loaders[mode]
+        from udl_vis.Basis.auxiliary import MetricLogger
+
+        log_buffer = MetricLogger(logger=self.logger, delimiter="  ")
+        path = self.checkpoint.get_best_checkpoints(self.model_dir)
+        print_log(f"Loading best checkpoint from {path}", logger=self.logger)
+        self.resume(path)
+        fname = os.path.basename(path)
+        version = len(fname.split("_"))
+        with deprecated_context(
+            "end_of_run",
+            "model_{epoch}_{metrics} will be deprecated in a future version. Please use model_{epoch}_{iter}_{metrics} instead.",
+        ):
+            if version == 3:
+                best_epoch = int(fname.split("_")[1])
+                best_iter = 0
+            elif version == 4:
+                best_epoch = int(fname.split("_")[1])
+                best_iter = int(fname.split("_")[2])
+        _, _, log_buffer = val(
+            runner=self,
+            data_loader=data_loader,
+            epoch=best_epoch,
+            max_epochs=self.cfg.max_epochs,
+            logger=self.logger,
+            log_buffer=log_buffer,
+            img_range=self.cfg.img_range,
+            eval_flag=True,
+            save_fmt=self.formatter,
+            test=self.cfg.test,
+            _iter=best_iter,
+            test_mode=True,
+            mode=mode,
+            data_length={mode: len(data_loader)},
+            # not save, only obtain best results to store into db (udl_cil)
+            results_dir=os.path.join(self.cfg.work_dir, "results/best_{epoch}"),
+            log_epoch_interval=self.cfg.log_epoch_interval,
+            train_log_iter_interval=self.cfg.train_log_iter_interval,
+            val_log_iter_interval=self.cfg.val_log_iter_interval,
+            test_log_iter_interval=self.cfg.test_log_iter_interval,
+            save_interval=self.cfg.save_interval,
+            dataset_cfg=self.cfg.dataset.dataset_cfg.get(mode, {}),
+        )
+
+        log_buffer.synchronize_between_processes()
+        metrics = {
+            k: meter.avg if not hasattr(meter, "image") else meter.image
+            for k, meter in log_buffer.meters.items()
+        }
+
+        best_metric_name = f"{mode}_{self.metrics[mode]}"
         print_log(
-            f"Manual saved model, {log_str}, and RNG generator in {self.model_dir}",
+            f"Metrics: {metrics}, {best_metric_name} is chosen as the best metric",
             logger=self.logger,
         )
+        # TODO: multi-objective optimization
+        import ipdb
 
-    def resume(
-        self,
-        resume_filename,
-        resume_mode,
-        reset_lr,
-        lr,
-        prefix,
-        revise_keys,
-        resume_optimizer=True,
-        map_location="default",
-        strict=False,
-    ):
-        cfg = self.cfg
-        if map_location == "default":
-            # if torch.cuda.is_available():
-            device_id = torch.cuda.current_device()
-            checkpoint = load_checkpoint(
-                resume_mode,
-                (
-                    os.path.dirname(resume_filename)
-                    if os.path.isdir(os.path.dirname(resume_filename))
-                    else cfg.work_dir
-                ),
-                self.model,
-                resume_filename,
-                map_location=lambda storage, loc: storage.cuda(device_id),
-                prefix=prefix,
-                strict=strict,
-                revise_keys=revise_keys,
-            )
-        # else:
-        #     checkpoint = load_checkpoint(
-        #         resume, resume_mode, prefix=prefix, revise_keys=revise_keys
-        #     )
-        else:
-            checkpoint = load_checkpoint(
-                resume_filename,
-                resume_mode,
-                self.model,
-                map_location=map_location,
-                prefix=prefix,
-                revise_keys=revise_keys,
-            )
-
-        resume_epoch = checkpoint["meta"]["epoch"]
-        if cfg.eval:
-            cfg.max_epochs = resume_epoch + 1
-        resume_iter = checkpoint["meta"]["iter"]
-
-        meta.setdefault("hook_msgs", {})
-        # load `last_ckpt`, `best_score`, `best_ckpt`, etc. for hook messages
-        meta["hook_msgs"].update(checkpoint["meta"].get("hook_msgs", {}))
-
-        # resume meta information meta
-        meta = checkpoint["meta"]
-
-        optimizer = self.optimizer_wrapper.optimizer
-
-        if "optimizer" in checkpoint and resume_optimizer:
-            if isinstance(optimizer, torch.optim.Optimizer):
-                optimizer.load_state_dict(checkpoint["optimizer"])
-                if lr > 0 and reset_lr:
-                    for param_group in optimizer.param_groups:
-                        param_group["lr"] = lr
-            elif isinstance(optimizer, dict):
-                for k in optimizer.keys():
-                    optimizer[k].load_state_dict(checkpoint["optimizer"][k])
-                if lr > 0 and reset_lr:
-                    for param_group in optimizer[k].param_groups:
-                        param_group["lr"] = lr
-                print_log("loaded checkpoint.optimizer.", logger=self.logger)
-            else:
-                raise TypeError(
-                    "Optimizer should be dict or torch.optim.Optimizer "
-                    f"but got {type(optimizer)}"
-                )
-
-        print_log(
-            f"resumed epoch {resume_epoch}, iter {resume_iter}", logger=self.logger
-        )
-
-        return checkpoint["meta"]["state_dataloader"]
+        ipdb.set_trace()
+        return {"best_value": metrics[best_metric_name]}
 
 
 def run_naive_engine(cfg, logger, task_model, build_model, getDataSession, **kwargs):
@@ -242,7 +354,7 @@ def run_naive_engine(cfg, logger, task_model, build_model, getDataSession, **kwa
 
     state_dataloader = runner.before_run()
 
-    run_engine(cfg, runner, getDataSession, cfg.workflow, logger, state_dataloader)
+    run_engine(cfg, runner, getDataSession, logger, state_dataloader)
 
 
 def test_pansharpening():
