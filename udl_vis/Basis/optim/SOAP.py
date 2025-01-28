@@ -424,7 +424,7 @@ class SOAP(optim.Optimizer):
         return final
     
     
-    def load_state_dict(self, state_dict, strict=True):
+    def load_state_dict(self, state_dict, strict=False):
         if strict:
             super().load_state_dict(state_dict)
         else:

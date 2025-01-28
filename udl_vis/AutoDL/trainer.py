@@ -30,6 +30,7 @@ def run_hydra(
     getDataSession=None,
     backend="accelerate",
     launcher="accelerate",
+    **cfg_kwargs
 ):
     config_path = os.path.dirname(full_config_path)
     config_name = os.path.basename(full_config_path)
@@ -45,9 +46,9 @@ def run_hydra(
         if import_path is not None:
             cfg.import_path = import_path
         if cfg.launcher == "pytorch":
-            main_spawn(cfg, taskModel, build_model, getDataSession)
+            main_spawn(cfg, taskModel, build_model, getDataSession, **cfg_kwargs)
         else:
-            main(cfg, taskModel, build_model, getDataSession)
+            main(cfg, taskModel, build_model, getDataSession, **cfg_kwargs)
 
     return inner_func()
 
@@ -79,7 +80,7 @@ def trainer(
     )
 
 
-def train_loop(local_rank, cfg, build_task, build_model, getDataSession, runner):
+def train_loop(local_rank, cfg, build_task, build_model, getDataSession, runner, cfg_kwargs):
     # rank, _ = get_dist_info()
 
     # accelerate is not supported from spawn
@@ -110,14 +111,14 @@ def train_loop(local_rank, cfg, build_task, build_model, getDataSession, runner)
             rank=local_rank, init_method="env://", world_size=cfg.num_gpus
         )
         os.environ["LOCAL_RANK"] = str(local_rank)
-        main(cfg, build_task, build_model, getDataSession)
+        main(cfg, build_task, build_model, getDataSession, **cfg_kwargs)
     else:
         raise ValueError(
             f"Invalid launcher type: {cfg.launcher}, only support pytorch's DDP, DP"
         )
 
 
-def main_spawn(cfg, build_task, build_model, getDataSession=None, runner=None):
+def main_spawn(cfg, build_task, build_model, getDataSession=None, runner=None, **cfg_kwargs):
     from torch import multiprocessing as mp
 
     # if cfg.launcher == "accelerate":
@@ -135,18 +136,22 @@ def main_spawn(cfg, build_task, build_model, getDataSession=None, runner=None):
     cfg.num_gpus = num_gpus
     mp.spawn(
             train_loop,
-            args=(cfg, build_task, build_model, getDataSession, runner),
+            args=(cfg, build_task, build_model, getDataSession, runner, cfg_kwargs),
             nprocs=num_gpus,
         )
 
 
-def main(cfg, build_task, build_model, getDataSession=None, runner=None, **kwargs):
+def main(cfg, build_task, build_model, getDataSession=None, runner=None, **cfg_kwargs):
     # init distributed env first, since logger depends on the dist info.
     cfg.local_rank = int(os.environ.get("LOCAL_RANK", 0))
 
     # Example: cfg.args and cfg.base
     # only easy for user to view, not easy for user to use
     merge_keys(cfg)
+    
+    if cfg_kwargs is not None:
+        cfg.merge_from_dict(cfg_kwargs)
+    
     
     if cfg.debug:
         print(cfg.pretty_text)
@@ -193,6 +198,5 @@ def main(cfg, build_task, build_model, getDataSession=None, runner=None, **kwarg
         build_model,
         getDataSession,
         runner,
-        meta={},
-        **kwargs,
+        meta={}
     )

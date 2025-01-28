@@ -179,9 +179,10 @@ def run_engine(cfg, runner, getDataSession, logger, state_dataloader):
 
     if "test" in data_loaders.keys():
         return runner.end_of_run("test", data_loaders["test"])
-    else:
+    if "val" in data_loaders.keys():
         return runner.end_of_run("val", data_loaders["val"])
-
+    else:
+        return {"best_value": np.nan}
 
 def run_by_epoch(
     cfg, runner, logger, data_length, train_flag, workflow, data_loaders, log_buffer

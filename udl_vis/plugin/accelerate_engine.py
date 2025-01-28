@@ -39,6 +39,7 @@ def print_gpu_device(accelerator, logger=None):
     except:
         gpu_ids = ["cuda:0"]
     if accelerator.state.num_processes > 1:
+        gpu_ids = [f"cuda:{x}" for x in range(accelerator.state.num_processes)]
         index = (
             accelerator.state.local_process_index
         )  # int(str(accelerator.state.device).split(":")[1])
@@ -119,13 +120,7 @@ class AcceleratorEngine:
 
         self.dtype = parser_mixed_precision(cfg.mixed_precision)
 
-        # try:
-        #     self.model, criterion, optimizer, scheduler = build_model(cfg)
-        # except Exception as e:
-        #     import inspect
-        #     parameters = inspect.signature(build_model).parameters
-        #     raise TypeError(f"{e}, build_model need parameters: {parameters}")
-        # self.model.to(f"cuda:{int(os.environ.get("LOCAL_RANK", 0))}")``
+
         self.model, criterion, optimizer, scheduler = build_model(cfg, logger)
 
         plugin_dicts = {}
@@ -452,10 +447,12 @@ class AcceleratorEngine:
         model_dir = self.model_dir
         if resume_from != "":
             base_resume_from = os.path.basename(resume_from)
+            shutil.copytree(
+                resume_from, "/".join([model_dir,base_resume_from]), dirs_exist_ok=True
+            )
             epoch = int(base_resume_from.split("_")[1])
             if epoch == self.cfg.max_epochs:
                 model_dir = os.path.dirname(resume_from)
-            
 
         path = self.checkpoint.get_best_checkpoints(model_dir)
         print_log(f"Loading best checkpoint from {path}", logger=self.logger)
@@ -473,9 +470,9 @@ class AcceleratorEngine:
             elif version == 4:
                 best_epoch = int(fname.split("_")[1])
                 best_iter = int(fname.split("_")[2])
-        
+
         results_dir = os.path.join(self.cfg.work_dir, f"results/best_{best_epoch}_{best_iter}")
-        
+
         _, _, log_buffer = val(
             runner=self,
             data_loader=data_loader,
@@ -508,7 +505,7 @@ class AcceleratorEngine:
         }
 
         # best_metric_name = f"{mode}_{self.metrics[mode]}"
-        
+
         shutil.move(results_dir, (results_dir+"_{metrics_name}_{metrics}") \
                     .format(epoch=best_epoch, iter=best_iter, 
                             metrics_name=self.metrics[mode], metrics=metrics[self.metrics[mode]]))
