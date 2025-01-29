@@ -10,6 +10,9 @@ import os
 import sys
 import importlib
 import copy
+import logging
+
+logger = logging.getLogger(__name__)
 
 # import scipy.io as sio
 
@@ -225,13 +228,15 @@ class ModelDispatcher(object):
             raise ValueError(
                 f"Got task={task} but expected " f"one of {cls._task.keys()} in {cls}"
             )
-        
+
         if cfg.get("import_path", None) is not None:
             if os.path.isfile("/".join([*cfg.import_path, "__init__.py"])):
                 sys.path.append(cfg.import_path[0])
                 importlib.import_module(cfg.import_path[1], "__init__")
         else:
-            print(f"Only load models from {cls}: {cls._models.keys()} for {cfg.task}")
+            logger.warning(
+                f"cfg.import_path is {cfg.import_path}, so only load models from {cls}: {cls._models.keys()} for {cfg.task}"
+            )
         try:
             # The following code replaces the `register` function to obtain the specific model
             # Logic:

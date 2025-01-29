@@ -1,7 +1,8 @@
 import os
 from huggingface_hub import HfApi, HfFolder, hf_hub_download, snapshot_download
 
-os.environ["HF_HUB_CACHE"] = "/home/dsq/nips/huggingface/hf_cache"
+os.environ["HF_HUB_CACHE"] = "/home/yutong.xie/xiaowu/huggingface/hf_cache"
+os.environ["HF_TOKEN"] = "YOUR_HF_TOKEN"
 os.makedirs(os.getenv("HF_HUB_CACHE"), exist_ok=True)
 
 

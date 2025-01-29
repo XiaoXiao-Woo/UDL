@@ -25,7 +25,7 @@ from udl_vis.Basis.checkpoint import ModelCheckpoint
 import gc
 import shutil
 import time
-from .base import val
+from udl_vis.plugin.base import val
 from udl_vis.Basis.dev_utils.deprecated import deprecated, deprecated_context
 
 os.environ["NCCL_TIMEOUT"] = "600"
@@ -119,7 +119,6 @@ class AcceleratorEngine:
         )
 
         self.dtype = parser_mixed_precision(cfg.mixed_precision)
-
 
         self.model, criterion, optimizer, scheduler = build_model(cfg, logger)
 
@@ -336,6 +335,14 @@ class AcceleratorEngine:
                         self.model_dir, retry_count
                     )
             if path is not None and os.path.isdir(path):
+
+                if not os.path.basename(path).startswith("model"):
+                    if not path.endswith("checkpoints"):
+                        path = "/".join([path, "checkpoints"])
+                    path = self.checkpoint.get_latest_checkpoints(
+                        path, retry_count
+                    )
+
                 self.resume(path, retry_count)
                 fname = os.path.basename(path)
 
@@ -446,6 +453,12 @@ class AcceleratorEngine:
         resume_from = self.cfg.resume_from
         model_dir = self.model_dir
         if resume_from != "":
+
+            if not os.path.basename(resume_from).startswith("model"):
+                if not resume_from.endswith("checkpoints"):
+                    resume_from = "/".join([resume_from, "checkpoints"])
+                resume_from = self.checkpoint.get_best_checkpoints(resume_from)
+
             base_resume_from = os.path.basename(resume_from)
             shutil.copytree(
                 resume_from, "/".join([model_dir,base_resume_from]), dirs_exist_ok=True
@@ -499,22 +512,29 @@ class AcceleratorEngine:
         )
 
         log_buffer.synchronize_between_processes()
-        metrics = {
+        indicators = {
             k: meter.avg if not hasattr(meter, "image") else meter.image
             for k, meter in log_buffer.meters.items()
         }
+        try:
+            metrics_name = mode + "_" + self.metrics[mode]
+        except:
+            metrics_name = self.metrics[mode]
 
-        # best_metric_name = f"{mode}_{self.metrics[mode]}"
-
-        shutil.move(results_dir, (results_dir+"_{metrics_name}_{metrics}") \
-                    .format(epoch=best_epoch, iter=best_iter, 
-                            metrics_name=self.metrics[mode], metrics=metrics[self.metrics[mode]]))
+        best_results_dir = (results_dir + "_{metrics_name}_{metrics}").format(
+                epoch=best_epoch,
+                iter=best_iter,
+                metrics_name=metrics_name,
+                metrics=indicators[metrics_name],
+            )
+        if not os.path.exists(best_results_dir):
+            shutil.move(results_dir, best_results_dir)
         print_log(
-            f"Metrics: {metrics}, {self.metrics[mode]} is chosen as the best metric",
+            f"Metrics: {indicators}, {metrics_name} is chosen as the best metric",
             logger=self.logger,
         )
         # TODO: multi-objective optimization
-        return {"best_value": metrics[self.metrics[mode]]}
+        return {"best_value": indicators[metrics_name]}
 
 
 def run_accelerate_engine(

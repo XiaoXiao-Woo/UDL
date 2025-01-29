@@ -10,7 +10,7 @@ from udl_vis.Basis.auxiliary import init_random_seed, set_random_seed
 from udl_vis.mmcv.utils.logging import print_log, create_logger
 from udl_vis.mmcv.runner import init_dist, get_dist_info
 from udl_vis.plugin.engine import get_engine
-from udl_vis.Basis.config import merge_keys
+from udl_vis.Basis.config import merge_keys, get_nested_attr, get_keys, filter_keys
 from udl_vis.Basis.option import Config
 from omegaconf import OmegaConf, DictConfig
 import hydra
@@ -41,10 +41,11 @@ def run_hydra(
             cfg = Config(OmegaConf.to_container(cfg, resolve=True))
             hydra_cfg = HydraConfig.get()
             cfg.work_dir = cfg.get("work_dir", hydra_cfg.runtime.output_dir)
+            cfg.default_work_dir = hydra_cfg.run["dir"]
+
         cfg.backend = backend
         cfg.launcher = launcher
-        if import_path is not None:
-            cfg.import_path = import_path
+        cfg.import_path = cfg.get("import_path", import_path)
         if cfg.launcher == "pytorch":
             main_spawn(cfg, taskModel, build_model, getDataSession, **cfg_kwargs)
         else:
@@ -148,14 +149,18 @@ def main(cfg, build_task, build_model, getDataSession=None, runner=None, **cfg_k
     # Example: cfg.args and cfg.base
     # only easy for user to view, not easy for user to use
     merge_keys(cfg)
-    
+
     if cfg_kwargs is not None:
         cfg.merge_from_dict(cfg_kwargs)
-    
-    
+
+    if os.path.basename(cfg.work_dir) == os.path.basename(cfg.default_work_dir):
+        all_keys = get_keys(cfg)
+        exp_ext = [f"{k}_{get_nested_attr(cfg, filter_keys(all_keys, k))}" for k in sorted(cfg.search_space)]
+        exp_ext = "_".join(exp_ext)
+        cfg.work_dir = "/".join([cfg.work_dir, "-1_-1_-1_" + exp_ext])
+
     if cfg.debug:
         print(cfg.pretty_text)
-
 
     logger = create_logger(cfg, cfg.experimental_desc, work_dir=cfg.work_dir)
     cfg.seed = init_random_seed(cfg.seed)
@@ -168,7 +173,7 @@ def main(cfg, build_task, build_model, getDataSession=None, runner=None, **cfg_k
     # ipdb.set_trace()
     if cfg.backend == "accelerate":
         cfg.launcher = "none"
-        
+
         cfg.distributed = False
         print_log(
             f"Prepare training environment by Accelerator when the backend is set to {cfg.backend}."

@@ -76,16 +76,15 @@ class NaiveEngine:
         self.task_model = task_model(self.device, self.model, criterion)
 
     def train_step(self, batch, iteration, **kwargs):
-        with torch.amp.autocast(device_type="cuda" if torch.cuda.is_available() else "cpu"):
-            log_vars = self.task_model.train_step(batch, **kwargs)
-            if torch.isnan(log_vars["loss"]):
-                self.model.zero_grad(set_to_none=True)
-                self._optimizer.zero_grad(set_to_none=True)
-                if self.ema_net is not None:
-                    self.ema_net._zero_grad(set_to_none=True)
-                gc.collect()
-                torch.cuda.empty_cache()
-                torch.cuda.synchronize()
+        log_vars = self.task_model.train_step(batch, **kwargs)
+        if torch.isnan(log_vars["loss"]):
+            self.model.zero_grad(set_to_none=True)
+            self._optimizer.zero_grad(set_to_none=True)
+            if self.ema_net is not None:
+                self.ema_net._zero_grad(set_to_none=True)
+            gc.collect()
+            torch.cuda.empty_cache()
+            torch.cuda.synchronize()
         # print(f"loss is nan, skip {_skip_n} batch(es) in this epoch")
         # self.ema_net.after_train_iter(iteration)
         # optimizer.step() is out of autocast
