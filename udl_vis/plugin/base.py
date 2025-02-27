@@ -56,8 +56,9 @@ def get_data_loader(cfg, getDataSession, state_dataloader):
             # cfg.dataset = cfg.dataset + '_multiExm1.h5'
             if getDataSession is not None:
                 eval_loader, eval_sampler = sess.get_test_dataloader(
-                    cfg.dataset.test_name.lower(), cfg.distributed)
-                
+                    cfg.dataset.test_name.lower(), cfg.distributed
+                )
+
             else:
                 eval_loader, eval_sampler = mode_func
             eval_cfg = cfg.get("evaluation", {})
@@ -99,17 +100,46 @@ def get_data_loader(cfg, getDataSession, state_dataloader):
     return cfg, data_loaders, generator
 
 
+def copy_code_dir(cfg, runner, logger):
+    if cfg.local_rank == 0:
+        cfg.code_dir.extend(
+            [
+                __file__,
+                cfg.full_config_path,
+                # f"{cfg.resume_from}/checkpoints",
+                runner.resume_from,
+                runner.task_model._models[cfg.model_type][1],
+            ]
+        )
+
+        if cfg.debug:
+            print(f"Copy runtime environment into {cfg.work_dir}: ", cfg.code_dir)
+
+        os.makedirs(os.path.join(cfg.work_dir, "codes"), exist_ok=True)
+        for file in cfg.code_dir:
+            if os.path.exists(file) and os.path.isfile(file):
+                shutil.copy(file, os.path.join(cfg.work_dir, "codes"))
+            elif os.path.exists(file) and os.path.isdir(file):
+                shutil.copytree(
+                    file,
+                    os.path.join(
+                        cfg.work_dir, f"codes/resume/{os.path.basename(file)}"
+                    ),
+                    dirs_exist_ok=True,
+                )
+            else:
+                logger.warning(f"[base]: File {file} does not exist, copy failed")
+
+
+# TODO:
+# put get_data_loader outside of run_engine
+# convert to class for better reusability by inherit and override
 @websocket_communicator()
 def run_engine(cfg, runner, getDataSession, logger, state_dataloader):
     websocket_communicator.set_value(cfg, logger)
 
     cfg.max_epochs = int(cfg.max_epochs)  # udl_cil may set max_epochs as float
-
-    if cfg.local_rank == 0:
-        cfg.code_dir.append(os.path.abspath(__file__))
-        os.makedirs(os.path.join(cfg.work_dir, "codes"), exist_ok=True)
-        for file in cfg.code_dir:
-            shutil.copy(file, os.path.join(cfg.work_dir, "codes"))
+    copy_code_dir(cfg, runner, logger)
 
     cfg.runner = {"type": "EpochBasedRunner", "max_epochs": cfg.max_epochs}  # argparser
 
@@ -184,6 +214,7 @@ def run_engine(cfg, runner, getDataSession, logger, state_dataloader):
     else:
         return {"best_value": np.nan}
 
+
 def run_by_epoch(
     cfg, runner, logger, data_length, train_flag, workflow, data_loaders, log_buffer
 ):
@@ -252,6 +283,7 @@ def run_by_epoch(
                             for k, meter in log_buffer.meters.items()
                         }
                         runner.save_ckpt(epoch, metrics, _iter)
+
                     epoch += 1
                 elif mode == "test" and runner.load_model_status:
                     # only run once when first load the last epoch
@@ -726,7 +758,7 @@ def run_iter(
                 end_of_inner_iter=_inner_iter == data_length["test"],
             )
 
-    if hasattr(data_length, "train") and _inner_iter == data_length["train"]:
+    if "train" in data_length.keys() and _inner_iter == data_length["train"]:
         runner.after_train_epoch(log_buffer, _iter, epoch, _inner_iter)
 
     return log_buffer

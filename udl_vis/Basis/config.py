@@ -25,6 +25,9 @@ from omegaconf import DictConfig
 from omegaconf import DictConfig, OmegaConf
 from hydra.experimental import compose, initialize
 from typing import List
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def get_compose_yml(full_config_path):
@@ -35,8 +38,9 @@ def get_compose_yml(full_config_path):
         cfg = compose(config_name=config_name)
         if isinstance(cfg, DictConfig):
             cfg = Config(OmegaConf.to_container(cfg, resolve=True))
-            cfg.merge_from_dict(cfg.args)
-            cfg.__delattr__("args")
+            if hasattr(cfg, "args"):
+                cfg.merge_from_dict(cfg.args)
+                cfg.__delattr__("args")
 
     return cfg
 
@@ -80,9 +84,13 @@ def filter_keys(keys: List[str], substring: str) -> str:
 def get_nested_attr(cfg: "Config", attr_path: str):  # type: ignore
     # split attr_path by dot
     attrs = attr_path.split(".")
-    # access attributes layer by layer
-    for attr in attrs:
-        cfg = getattr(cfg, attr)  # access attributes layer by layer
+    if isinstance(cfg, dict):
+        for attr in attrs:
+            cfg = cfg[attr]
+    else:
+        # access attributes layer by layer
+        for attr in attrs:
+            cfg = getattr(cfg, attr)  # access attributes layer by layer
     return cfg
 
 
@@ -109,6 +117,86 @@ def merge_keys(cfg):
         cfg.__delattr__("merge_keys")
     cfg.backend = backend
     cfg.launcher = launcher
+
+
+def overrides2dict(task: Dict | List, cfg) -> dict:  # this is an extra_cfg
+    """
+    extra_cfg overrides key-value of argparser in run_file
+    Case1: "*": If cfg's auguments in final run_file, it will be overridden by extra_cfg
+    Case2: "args.*" | "+args.*": the auguments with the two prefix will allow us to add these auguments to final run_file
+    Case3: "+*": If cfg's auguments with "+" prefix, it will be added to udl_cil's auguments
+    """
+    all_keys = get_keys(cfg)
+    command_dicts = {}
+    result_dict = {}
+
+    def add_NewKey2command_dicts(key, value, key_value):
+        if "+args" not in key_value and "+" in key_value:
+            return {key.replace("+", ""): value}
+        return {}
+
+    def add_NewKey2run_file(cfg, key, value, key_value):
+        if "args" in key_value:
+            key = key.replace("+args.", "")
+            if key not in all_keys:
+                key = "+" + key
+            if key in cfg.search_space:
+                raise ValueError(f"{key_value} is conflicted with {cfg.config_name}")
+            # try:
+            #     if isinstance(value, (list, dict, tuple)):
+            #         return {key: value}
+            #     else:
+            #         return {key: value}  # float
+            # except:
+            #     return {key: value}
+            return {key: value}
+        return {}
+
+    def inner_func(cfg, key, value, key_value):
+        command_dicts.update(add_NewKey2command_dicts(key, value, key_value))
+        result_dict.update(add_NewKey2run_file(cfg, key, value, key_value))
+
+    # transfer key-value to final run file
+    if isinstance(task, dict):
+        for key, value in task.items():
+            inner_func(cfg, key, value, key)
+    else:
+        for item in task:  # omegaconf.listconfig.ListConfig
+            key, *value = item.split("=")
+            value = "=".join(value)
+            inner_func(cfg, key, value, item)
+    # else:
+    # raise ValueError(f"command arguments is not a dict or list: {type(task)}")
+    if isinstance(task, dict):
+        print(f"The given extra_cfg overrides argparser in run_file: {result_dict}")
+        print(f"The given command_dicts overrides auguments: {command_dicts}")
+    else:
+        print(f"The given extra_cfg overrides argparser in run_file: {result_dict}")
+        print(
+            "The given command_dicts overrides auguments: {}. Instead, hydra has override auguments."
+        )
+
+    return result_dict, command_dicts
+
+
+def search_partial_param(exp_ext, old_exps):
+    full_exp_ext = []
+    for exp in old_exps:
+        tmp = exp.split("_")[3:]
+        if len(tmp) % 2 == 1 or len(tmp) == 0:  # not satisfy 0_0_0 case
+            continue
+        prefix = tmp[::2]
+        tmp = [f"{tmp[i]}_{tmp[i + 1]}" for i in range(0, len(tmp), 2)]
+        diff_keys = set(exp_ext) - set(tmp)
+
+        # 检查 diff_keys 中的任意元素是否包含 prefix 中的任意元素
+        # 仅允许新增参数-数值，不允许改变参数对应数值
+        # prefix = ["lr", "stages", "scheme"], diff_keys=[] -> not False -> append
+        # prefix = ["lr", "stages", "scheme"], diff_keys=["lr"] -> not True -> not append
+
+        if not any(any(v in key for key in diff_keys) for v in prefix):
+            full_exp_ext.append(exp)
+    return full_exp_ext
 
 
 def import_modules_from_strings(imports, allow_failed_imports=False):

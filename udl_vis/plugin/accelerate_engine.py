@@ -27,6 +27,8 @@ import shutil
 import time
 from udl_vis.plugin.base import val
 from udl_vis.Basis.dev_utils.deprecated import deprecated, deprecated_context
+from torch import distributed as dist
+
 
 os.environ["NCCL_TIMEOUT"] = "600"
 
@@ -102,7 +104,10 @@ class AcceleratorEngine:
         super().__init__()
 
         self.cfg = cfg
+        self.resume_from = ""
         self.load_model_status = False
+        self.load_model_strict = cfg.load_model_strict
+        self.load_optimizer_strict = cfg.load_optimizer_strict
         self.sync_buffer = sync_buffer
         self.metrics = cfg.metrics
         self.formatter = cfg.formatter
@@ -133,6 +138,8 @@ class AcceleratorEngine:
         self.model, self._optimizer = self.init_accelerator(
             plugin_dicts, self.model, optimizer
         )
+
+        self.resume_checkpoints(self.cfg.resume_from)
 
         self.device = self.accelerator.device
 
@@ -173,10 +180,13 @@ class AcceleratorEngine:
                 sync_with_dataloader=False,
                 sync_each_batch=False,
             ),
-            kwargs_handlers=[DistributedDataParallelKwargs(find_unused_parameters=True)],
+            kwargs_handlers=[
+                DistributedDataParallelKwargs(
+                    find_unused_parameters=self.cfg.find_unused_parameters
+                )
+            ],
             **plugin_dicts,
         )
-
         if "deepspeed" in plugin_dicts.keys():
             accelerator.state.deepspeed_plugin.deepspeed_config[
                 "train_micro_batch_size_per_gpu"
@@ -287,7 +297,7 @@ class AcceleratorEngine:
         else:
             self.ema_net = None
 
-        self.resume_checkpoints(self.cfg.resume_from)
+        # self.resume_checkpoints(self.cfg.resume_from)
         self.accelerator.wait_for_everyone()
 
     def before_train_epoch(self):
@@ -339,15 +349,14 @@ class AcceleratorEngine:
                 if not os.path.basename(path).startswith("model"):
                     if not path.endswith("checkpoints"):
                         path = "/".join([path, "checkpoints"])
-                    path = self.checkpoint.get_latest_checkpoints(
-                        path, retry_count
-                    )
+                    path = self.checkpoint.get_latest_checkpoints(path, retry_count)
 
                 self.resume(path, retry_count)
                 fname = os.path.basename(path)
 
                 tup = fname.split("_")
                 save_version = len(tup)
+                self.resume_from = path
                 with deprecated_context(
                     "save_version",
                     "model_{epoch}_{metrics} will be deprecated in a future version. Please use model_{epoch}_{iter}_{metrics} instead.",
@@ -396,7 +405,25 @@ class AcceleratorEngine:
     def resume(self, path, retry_count=0):
 
         # self.checkpoint.load_checkpoint(path)
-        self.accelerator.load_state(input_dir=path, strict=False)
+        self.accelerator.load_state(
+            input_dir=path,
+            load_model_func_kwargs={"strict": self.load_model_strict},
+            load_optimizer_func_kwargs={"strict": self.load_optimizer_strict},
+        )
+        # from safetensors.torch import load_file
+
+        # self.model.cpu()
+        # self.model.load_state_dict(load_file(path + "/model.safetensors"))
+        # self.model.to(self.accelerator.device)
+
+        if self.cfg.use_post_train:
+            if hasattr(self.model, "module"):
+                if hasattr(self.model.module, "reset_parameters"):
+                    self.model.module.reset_parameters()
+            else:
+                if hasattr(self.model, "reset_parameters"):
+                    self.model.reset_parameters()
+
         # self.accelerator.state.epoch = self.cfg.start_epoch
         if retry_count == 0:
             print_log(
@@ -461,7 +488,7 @@ class AcceleratorEngine:
 
             base_resume_from = os.path.basename(resume_from)
             shutil.copytree(
-                resume_from, "/".join([model_dir,base_resume_from]), dirs_exist_ok=True
+                resume_from, "/".join([model_dir, base_resume_from]), dirs_exist_ok=True
             )
             epoch = int(base_resume_from.split("_")[1])
             if epoch == self.cfg.max_epochs:
@@ -484,7 +511,9 @@ class AcceleratorEngine:
                 best_epoch = int(fname.split("_")[1])
                 best_iter = int(fname.split("_")[2])
 
-        results_dir = os.path.join(self.cfg.work_dir, f"results/best_{best_epoch}_{best_iter}")
+        results_dir = os.path.join(
+            self.cfg.work_dir, f"results/best_{best_epoch}_{best_iter}"
+        )
 
         _, _, log_buffer = val(
             runner=self,
@@ -516,17 +545,21 @@ class AcceleratorEngine:
             k: meter.avg if not hasattr(meter, "image") else meter.image
             for k, meter in log_buffer.meters.items()
         }
-        try:
-            metrics_name = mode + "_" + self.metrics[mode]
-        except:
-            metrics_name = self.metrics[mode]
 
+        for key in indicators.keys():
+            if mode in key:
+                metrics_name = mode + "_" + self.metrics[mode]
+            else:
+                metrics_name = self.metrics[mode]
+            break
+
+        print(indicators.keys(), metrics_name, mode, self.metrics[mode])
         best_results_dir = (results_dir + "_{metrics_name}_{metrics}").format(
-                epoch=best_epoch,
-                iter=best_iter,
-                metrics_name=metrics_name,
-                metrics=indicators[metrics_name],
-            )
+            epoch=best_epoch,
+            iter=best_iter,
+            metrics_name=metrics_name,
+            metrics=indicators[metrics_name],
+        )
         if not os.path.exists(best_results_dir):
             shutil.move(results_dir, best_results_dir)
         print_log(
@@ -544,6 +577,7 @@ def run_accelerate_engine(
     build_model,
     getDataSession,
     callbacks=[],
+    trainer=None,  # run_engine
     **kwargs,
 ):
     if cfg.local_rank == 0:
@@ -567,5 +601,6 @@ def run_accelerate_engine(
     runner.before_run()
 
     print_log("Running process ...", logger=logger)
-
-    run_engine(cfg, runner, getDataSession, logger, state_dataloader=None)
+    if trainer is None:
+        trainer = run_engine
+    trainer(cfg, runner, getDataSession, logger, state_dataloader=None)

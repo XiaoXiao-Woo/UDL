@@ -79,7 +79,7 @@ class LRScheduler(object):
 
     def __init__(self, optimizer, **kwargs):
         self.optimizer = optimizer
-        self.scheduler_type = kwargs.pop('scheduler_type')
+        self.scheduler_type = kwargs.pop("scheduler_type", None)
         self.set_scheduler(self.scheduler_type, **kwargs)
 
     # 六大学习率调整策略，lr = lr * gamma
@@ -106,27 +106,30 @@ class LRScheduler(object):
         if scheduler_type == "StepLR":
             # 等间距阶段式衰减
             self.lr_scheduler = optim.lr_scheduler.StepLR(
-                optimizer, **kwargs#step_size=10, gamma=0.95
+                optimizer, **kwargs  # step_size=10, gamma=0.95
             )
         elif scheduler_type == "ReduceLROnPlateau":
             # Reduce learning rate when validation accuarcy plateau.
             self.lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-                optimizer, **kwargs#mode="max", patience=5, verbose=True
+                optimizer, **kwargs  # mode="max", patience=5, verbose=True
             )
         elif scheduler_type == "MultiStepLR":
             # milestones=[epoch1,epoch2,...] 阶段式衰减
             self.lr_scheduler = optim.lr_scheduler.MultiStepLR(
-                optimizer, **kwargs,#[100, 200, 300], gamma=0.5
+                optimizer,
+                **kwargs,  # [100, 200, 300], gamma=0.5
             )  # [50, 100, 150, 200, 250, 300, 350, 400], gamma=0.5)
         elif scheduler_type == "ExponentialLR":
             # 指数衰减x, 0.1,0.01,0.001,...
             self.lr_scheduler = optim.lr_scheduler.ExponentialLR(
-                optimizer=optimizer, **kwargs,#gamma=0.1
+                optimizer=optimizer,
+                **kwargs,  # gamma=0.1
             )
         elif scheduler_type == "CosineAnnealingLR":
             # Cosine annealing learning rate.
             self.lr_scheduler = optim.lr_scheduler.CosineAnnealingLR(
-                optimizer, **kwargs,#T_max=30, eta_min=1e-7
+                optimizer,
+                **kwargs,  # T_max=30, eta_min=1e-7
             )
         elif scheduler_type == "CyclicLR":
             self.lr_scheduler = optim.lr_scheduler.CyclicLR(
@@ -144,21 +147,24 @@ class LRScheduler(object):
             # lambda2 = lambda epoch: 0.95 ** epoch
             # lr_lambda对应optimizer中的keys，model.parameters()就只有一个lambda函数
             self.lr_scheduler = optim.lr_scheduler.LambdaLR(
-                optimizer, **kwargs#lr_lambda=[curves]
+                optimizer, **kwargs  # lr_lambda=[curves]
             )
         elif scheduler_type == "CosineAnnealingWarmRestartsReduce":
             self.lr_scheduler = CosineAnnealingWarmRestartsReduce(
-                optimizer, **kwargs #T_0=20, T_mult=2, lr_mult=0.7, eta_min=8e-5, warmup_epochs=0
+                optimizer,
+                **kwargs,  # T_0=20, T_mult=2, lr_mult=0.7, eta_min=8e-5, warmup_epochs=0
             )
         elif scheduler_type == "CosineAnnealingWarmRestarts":
             # To 初始周期
             # T_mult 每次循环 周期改变倍数  T_0 = T_0*T_mult
             # Learning rate warmup by 10 epochs.
             self.lr_scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(
-                optimizer, **kwargs #T_0=10, T_mult=2, eta_min=0
+                optimizer, **kwargs  # T_0=10, T_mult=2, eta_min=0
             )
         else:
-            raise NotImplementedError(f"{__file__}: scheduler_type: {scheduler_type} not in pytorch")
+            raise NotImplementedError(
+                f"{__file__}: scheduler_type: {scheduler_type} not in pytorch"
+            )
 
     def adjust_2_learning_rate(self, epoch):
         """编写2种形式的学习率衰减策略的组合"""
@@ -263,14 +269,12 @@ def get_lr_map(optimizer, lr_scheduler, epochs, out_file=None, viz=False):
 if __name__ == "__main__":
     import os
 
-
-
     model = nn.Linear(10, 10).cuda()
     optimizer = optim.SGD(params=model.parameters(), lr=1e-3)
     scheduler = CosineAnnealingWarmRestartsReduce(
-            optimizer, T_0=20, T_mult=2, lr_mult=0.7, eta_min=8e-5, warmup_epochs=0
-        )
-    
+        optimizer, T_0=20, T_mult=2, lr_mult=0.7, eta_min=8e-5, warmup_epochs=0
+    )
+
     epochs = 3000
     # 构造一个带warmup小学习率的optimizer，再上升到标准值，再正常周期下降
     lrs = lr_scheduler(0.1, epochs)
@@ -280,7 +284,13 @@ if __name__ == "__main__":
     # lrs.set_optimizer(optimizer, optim.lr_scheduler.ExponentialLR)
     # lrs.get_lr_map("ExponentialLR")
     lrs.set_optimizer(optimizer, scheduler)
-    get_lr_map(optimizer, lrs.lr_scheduler, epochs, out_file=os.path.dirname(__file__), viz=True)
+    get_lr_map(
+        optimizer,
+        lrs.lr_scheduler,
+        epochs,
+        out_file=os.path.dirname(__file__),
+        viz=True,
+    )
     print(lrs.lr)
     # lrs.set_optimizer(optimizer, optim.lr_scheduler.CyclicLR)
     # lrs.get_lr_map("CyclicLR")

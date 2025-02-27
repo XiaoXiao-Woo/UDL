@@ -335,9 +335,6 @@ class NaiveEngine:
             logger=self.logger,
         )
         # TODO: multi-objective optimization
-        import ipdb
-
-        ipdb.set_trace()
         return {"best_value": metrics[best_metric_name]}
 
 

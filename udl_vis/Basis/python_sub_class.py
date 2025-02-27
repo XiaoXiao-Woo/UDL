@@ -241,9 +241,9 @@ class ModelDispatcher(object):
             # The following code replaces the `register` function to obtain the specific model
             # Logic:
             # cls is parent class
-            # class build_model(cls) is the specific model
-            # Thus, we can obtain the specific model
-            cls_arch = cls._models[arch](device=None)
+            # class build_model(cls, name="ModelName") is the specific model
+            # Thus, we can obtain the specific model by name
+            cls_arch = cls._models[arch][0](device=None) # Tuple[cls, path]
         except KeyError:
             if cfg.get("import_path", None) is not None:
                 raise ValueError(

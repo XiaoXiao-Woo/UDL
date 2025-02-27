@@ -313,6 +313,8 @@ class MetricLogger(object):
                 v = torch.mean(v)
                 if hasattr(v, "item"):
                     v = v.item()
+            elif isinstance(v, list):
+                v = np.mean(v)
             assert isinstance(v, (float, int, str)), print("type: ", type(v))
             self.meters[k].update(v)
 

@@ -75,6 +75,8 @@ class PatchMergeModule(nn.Module):
         # self.device = device
 
     def forward(self, data, mode, **kwargs):
+        # BaseModel -> forward
+        # model.train_step -> forward_chop -> _forward_implem
         if mode == "train":
             return self.train_step(data, **kwargs)
         else:
@@ -87,10 +89,10 @@ class PatchMergeModule(nn.Module):
 
     @torch.no_grad()
     def forward_chop(self, data, shave=12, **kwargs):
-        '''
+        """
         data: a dict composed of multiple data, each data is a tensor
         kwargs: transfer other arguments into model.forward without patch chop
-        '''
+        """
 
         # 输出存在维度不一样的情况, 因为网络有多层并且每层尺度不同, 进行分开处理: final_output, intermediate_output
         # TODO: bug: 1. 输出的张量尺寸不一样的时候 无法进行fold操作, 一是因为参数, 二是可能还原不回去
@@ -107,7 +109,7 @@ class PatchMergeModule(nn.Module):
         # self.axes[1][0].imshow(x[0, ...].permute(1, 2, 0).cpu().numpy() / 255)
         # x = x.cpu()
         if len(patch_size_list) == 0:
-            raise RuntimeError('patch_size_list is empty') from None
+            raise RuntimeError("patch_size_list is empty") from None
         if len(patch_size_list.keys()) != len(data.keys()):
             raise RuntimeError(
                 f"patch_size_list: {patch_size_list} should have {len(data.keys())} variants"
@@ -274,8 +276,8 @@ class PatchMergeModule(nn.Module):
         y_unfold = []
         for i in range(x_range_list[0]):
             res = self._forward(
-                **{k:
-                    s[i * batchsize : (i + 1) * batchsize, ...].cuda()
+                **{
+                    k: s[i * batchsize : (i + 1) * batchsize, ...].cuda()
                     for k, s in x_unfold_dict.items()
                 },
                 **kwargs,
@@ -446,8 +448,10 @@ class PatchMergeModule(nn.Module):
         y_h_cut_unfold = []
         for i in range(x_range_list[0]):
             res = self._forward(
-                **{k:
-                    x_h_cut_unfold_dict[k][i * batchsize : (i + 1) * batchsize, ...].cuda()
+                **{
+                    k: x_h_cut_unfold_dict[k][
+                        i * batchsize : (i + 1) * batchsize, ...
+                    ].cuda()
                     for k in x_h_cut_unfold_dict.keys()
                 },
                 **kwargs,
@@ -580,8 +584,10 @@ class PatchMergeModule(nn.Module):
             # res = self.forward(*[s[:, 0, ...] for s in split_func(x_w_cut_unfold[i * batchsize:(i + 1) * batchsize,
             #                                                       ...], [1, 1, 1], dim=1)], **kwargs)
             res = self._forward(
-                **{k:
-                    x_w_cut_unfold_dict[k][i * batchsize : (i + 1) * batchsize, ...].cuda()
+                **{
+                    k: x_w_cut_unfold_dict[k][
+                        i * batchsize : (i + 1) * batchsize, ...
+                    ].cuda()
                     for k in x_w_cut_unfold_dict.keys()
                 },
                 **kwargs,
